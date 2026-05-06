@@ -22,6 +22,7 @@ from cross_asset.analytics import (
     rolling_pairwise_corrs, latest_pairwise_corrs,
     pca_dominant_theme, rolling_pca_loadings,
     correlation_story, loading_label,
+    __ANALYTICS_VERSION__,
 )
 
 DATA_PATH = Path(__file__).parent / "data" / "CROSSASSET.xlsx"
@@ -193,6 +194,7 @@ def render_cross_asset():
         if st.button("↻ Refresh data", use_container_width=True, key="ca_refresh"):
             st.cache_data.clear()
             st.rerun()
+        st.caption(f"⚙ Analytics: `{__ANALYTICS_VERSION__}`")
 
     # -------------------------------------------------------------------
     # Header

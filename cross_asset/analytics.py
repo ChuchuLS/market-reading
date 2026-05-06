@@ -109,13 +109,18 @@ def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60) -> pd.DataFram
     preceding `window` days. Returns DataFrame indexed by Date with columns:
       SPX_load, USGG10YR_load, DXY_load, ExplainedVar, EigGap
 
+    [v2 — sign-stabilized + spike-resistant]
+
     Sign convention:
       - Within the time series, signs are aligned to the previous day's PC1
-        so the curves don't randomly flip when SPX_load is near zero.
+        so the curves don't randomly flip when a loading is near zero.
       - The entire series is then globally flipped (if needed) so that the
-        MOST RECENT window has positive SPX loading. This way the dashboard's
-        "current" reading always shows SPX as positive, matching the
-        interpretation in pca_dominant_theme().
+        MOST RECENT window has positive SPX loading, matching
+        pca_dominant_theme()'s convention.
+      - As a final guard, any single-day "spike" (a day where loadings differ
+        wildly from BOTH neighbors) is forced to align with its neighbors.
+        This catches edge cases where the sign-flip detector tied at
+        dot-product == 0.
 
     EigGap = (lambda1 - lambda2) / lambda1.  When small (<~0.15), PC1 and
     PC2 are nearly equal in importance; the loadings are unreliable and
@@ -138,14 +143,20 @@ def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60) -> pd.DataFram
         eig_vecs = eig_vecs[:, idx]
         pc1 = eig_vecs[:, 0]
 
-        # Within-time stability: align to previous day's PC1 (or to SPX>0
-        # for the very first window)
+        # Within-time stability: align to previous day's PC1.
+        # If it's the very first window OR the dot product is exactly zero
+        # (orthogonal), fall back to anchoring SPX positive.
         if prev_pc1 is None:
             if pc1[spx_idx] < 0:
                 pc1 = -pc1
         else:
-            if np.dot(pc1, prev_pc1) < 0:
+            dot = np.dot(pc1, prev_pc1)
+            if dot < 0:
                 pc1 = -pc1
+            elif abs(dot) < 1e-6:
+                # Degenerate — fall back to SPX-positive anchor
+                if pc1[spx_idx] < 0:
+                    pc1 = -pc1
         prev_pc1 = pc1.copy()
 
         eig_gap = float((eig_vals[0] - eig_vals[1]) / eig_vals[0])
@@ -161,14 +172,37 @@ def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60) -> pd.DataFram
         })
 
     df = pd.DataFrame(out_records).set_index("Date")
+    if df.empty:
+        return df
 
-    # Final global sign flip: ensure the MOST RECENT window has SPX positive,
-    # so the dashboard's "current" reading is intuitive. This preserves
-    # all relative motion within the series.
-    if not df.empty and df["SPX_load"].iloc[-1] < 0:
+    # Global sign flip so the most recent reading has SPX positive
+    if df["SPX_load"].iloc[-1] < 0:
         df[["SPX_load", "USGG10YR_load", "DXY_load"]] *= -1
 
+    # Final spike-killer: any day where ALL three loadings differ by >0.8
+    # from BOTH the previous and next day is a sign artifact — flip it.
+    # Run this as a single pass.
+    load_cols = ["SPX_load", "USGG10YR_load", "DXY_load"]
+    arr = df[load_cols].to_numpy()
+    n = len(arr)
+    if n >= 3:
+        for i in range(1, n - 1):
+            prev_diff = np.abs(arr[i] - arr[i - 1]).max()
+            next_diff = np.abs(arr[i] - arr[i + 1]).max()
+            flipped_diff_prev = np.abs(-arr[i] - arr[i - 1]).max()
+            flipped_diff_next = np.abs(-arr[i] - arr[i + 1]).max()
+            # If flipping would dramatically reduce both gaps, do it
+            if (prev_diff > 0.8 and next_diff > 0.8 and
+                flipped_diff_prev < prev_diff * 0.5 and
+                flipped_diff_next < next_diff * 0.5):
+                arr[i] = -arr[i]
+        df[load_cols] = arr
+
     return df
+
+
+# Module version marker — bump when math changes so we can verify deployment
+__ANALYTICS_VERSION__ = "v2.1-2026-05-06"
 
 
 # ---------------------------------------------------------------------------
