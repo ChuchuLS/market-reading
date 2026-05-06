@@ -59,7 +59,6 @@ DARK_LAYOUT = dict(
     paper_bgcolor=BG,
     plot_bgcolor=BG,
     font=dict(family="Inter, system-ui, sans-serif", color=TEXT, size=11),
-    margin=dict(l=40, r=40, t=20, b=30),
 )
 
 # ---------------------------------------------------------------------------
