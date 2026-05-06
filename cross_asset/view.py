@@ -173,65 +173,6 @@ def render_cross_asset():
     last_updated = datetime.fromtimestamp(mtime).strftime("%b %d, %Y · %H:%M")
 
     # -------------------------------------------------------------------
-    # Sidebar — controls
-    # -------------------------------------------------------------------
-    with st.sidebar:
-        st.markdown("**CROSS-ASSET CONTROLS**")
-        window = st.select_slider(
-            "Rolling window (trading days)",
-            options=[10, 15, 20, 25, 30, 42, 60, 90, 126, 252],
-            value=20,
-            key="ca_window",
-        )
-
-        scaling = st.radio(
-            "Return scaling",
-            options=["zscore", "volscale"],
-            index=0,
-            format_func=lambda x: {
-                "zscore":   "Z-score (within window)",
-                "volscale": "Vol-scale (trailing-vol divisor)",
-            }[x],
-            key="ca_scaling",
-            help=(
-                "How returns are made comparable across assets before PCA. "
-                "Z-score uses each window's own mean/std (equivalent to PCA on "
-                "the correlation matrix). Vol-scale divides by trailing realized "
-                "vol — preserves cross-window comparability of magnitudes."
-            ),
-        )
-
-        weighting = st.radio(
-            "Window weighting",
-            options=["equal", "ewm"],
-            index=0,
-            format_func=lambda x: {
-                "equal": "Equal-weighted",
-                "ewm":   "Exponential (halflife = window/3)",
-            }[x],
-            key="ca_weighting",
-            help=(
-                "Within each rolling window, do recent days weight more? "
-                "Equal = standard rolling. EWM = exponential decay, recent days "
-                "carry more weight (smoother curves, faster response to regime change)."
-            ),
-        )
-
-        st.markdown("---")
-        st.markdown("**DATA**")
-        st.caption(f"📁 {DATA_PATH.name}")
-        st.caption(f"🕐 Updated: {last_updated}")
-        st.caption(f"🔢 {len(prices)} trading days · "
-                   f"{prices.index.min().date()} → {prices.index.max().date()}")
-        if st.button("↻ Refresh data", use_container_width=True, key="ca_refresh"):
-            st.cache_data.clear()
-            st.rerun()
-        st.caption(f"⚙ Analytics: `{__ANALYTICS_VERSION__}`")
-
-    # Compute returns according to chosen method
-    returns = compute_returns(prices, vol_scale=(scaling == "volscale"))
-
-    # -------------------------------------------------------------------
     # Header
     # -------------------------------------------------------------------
     st.markdown(
@@ -248,12 +189,83 @@ def render_cross_asset():
           </div>
           <div style="font-size:11px;color:#888;letter-spacing:0.05em;margin-top:0.5rem;
                       text-transform:uppercase;">
-            Latest: {last_updated} · {len(prices)} trading days · rolling {window}d window
+            Latest: {last_updated} · {len(prices)} trading days
           </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    # -------------------------------------------------------------------
+    # Inline methodology controls — visible on page (no sidebar dependency)
+    # -------------------------------------------------------------------
+    st.markdown(
+        """
+        <div style="font-size:10px;color:#fbbf24;letter-spacing:0.15em;
+                    text-transform:uppercase;font-weight:600;margin-top:0.25rem;
+                    margin-bottom:0.25rem;">
+          ⚙ Methodology
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    cc1, cc2, cc3, cc4 = st.columns([2, 2, 2, 1])
+    with cc1:
+        window = st.select_slider(
+            "Rolling window (trading days)",
+            options=[10, 15, 20, 25, 30, 42, 60, 90, 126, 252],
+            value=20,
+            key="ca_window",
+        )
+    with cc2:
+        scaling = st.radio(
+            "Return scaling",
+            options=["zscore", "volscale"],
+            index=0,
+            format_func=lambda x: {
+                "zscore":   "Z-score (within window)",
+                "volscale": "Vol-scale (trailing-vol divisor)",
+            }[x],
+            key="ca_scaling",
+            horizontal=True,
+            help=(
+                "Z-score uses each window's own mean/std (PCA on correlation matrix). "
+                "Vol-scale divides each return by its trailing realized vol — preserves "
+                "cross-window magnitude comparability."
+            ),
+        )
+    with cc3:
+        weighting = st.radio(
+            "Window weighting",
+            options=["equal", "ewm"],
+            index=0,
+            format_func=lambda x: {
+                "equal": "Equal",
+                "ewm":   f"Exponential (halflife=W/3)",
+            }[x],
+            key="ca_weighting",
+            horizontal=True,
+            help=(
+                "Equal = standard rolling. EWM = exponential decay so recent days carry more weight."
+            ),
+        )
+    with cc4:
+        st.markdown("<div style='font-size:10px;color:transparent;'>spacer</div>",
+                    unsafe_allow_html=True)
+        if st.button("↻ Refresh data", use_container_width=True, key="ca_refresh"):
+            st.cache_data.clear()
+            st.rerun()
+
+    st.caption(
+        f"📁 {DATA_PATH.name} · 🕐 {last_updated} · "
+        f"{len(prices)} trading days, {prices.index.min().date()} → {prices.index.max().date()} · "
+        f"⚙ Analytics: {__ANALYTICS_VERSION__}"
+    )
+
+    # Compute returns according to chosen method
+    returns = compute_returns(prices, vol_scale=(scaling == "volscale"))
+
+    st.markdown("---")
 
     # -------------------------------------------------------------------
     # Two-column layout: Pairwise Correlations | Dominant Theme
