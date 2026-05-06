@@ -199,17 +199,25 @@ def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60,
 
     weighting: "equal" or "ewm" (halflife = window/3).
 
-    Sign convention:
-      - Within the time series, signs are aligned to the previous day's PC1
-        (continuity), then globally flipped so the most recent window has
-        positive SPX loading.
-      - A final spike-killer pass removes any single-day discontinuities
-        from numerical edge cases.
+    Sign convention: PER-WINDOW SPX-positive anchor.
+      Each day's PC1 is independently flipped (if needed) so SPX_load >= 0.
+      This means UST10Y and DXY loadings reflect the TRUE correlation
+      structure within that window: when SPX/UST10Y are positively
+      correlated in the window, UST10Y_load will be positive; when
+      negatively correlated, UST10Y_load will be negative.
+
+      We do NOT use cross-window sign continuity, because that hides
+      legitimate regime changes (e.g., 'risk-on/yields up' vs
+      'risk-on/yields down' regimes).
+
+      Trade-off: in degenerate windows where SPX_load is near zero,
+      tiny numerical fluctuations can flip the sign and cause visible
+      jitter. The EigGap column flags those days; the chart shades them
+      gray to indicate low confidence.
     """
     cols = list(returns.columns)
     spx_idx = cols.index("SPX")
     out_records = []
-    prev_pc1 = None
 
     for end_idx in range(window, len(returns) + 1):
         sub = returns.iloc[end_idx - window:end_idx]
@@ -225,18 +233,11 @@ def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60,
         eig_vecs = eig_vecs[:, idx]
         pc1 = eig_vecs[:, 0]
 
-        # Within-time stability
-        if prev_pc1 is None:
-            if pc1[spx_idx] < 0:
-                pc1 = -pc1
-        else:
-            dot = np.dot(pc1, prev_pc1)
-            if dot < 0:
-                pc1 = -pc1
-            elif abs(dot) < 1e-6:
-                if pc1[spx_idx] < 0:
-                    pc1 = -pc1
-        prev_pc1 = pc1.copy()
+        # Anchor SPX positive on EVERY day. This is the right convention:
+        # UST10Y and DXY signs are then free to reflect their true
+        # correlation with SPX in this specific window.
+        if pc1[spx_idx] < 0:
+            pc1 = -pc1
 
         eig_gap = float((eig_vals[0] - eig_vals[1]) / eig_vals[0])
         explained = float(eig_vals[0] / eig_vals.sum())
@@ -251,34 +252,11 @@ def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60,
         })
 
     df = pd.DataFrame(out_records).set_index("Date")
-    if df.empty:
-        return df
-
-    # Global sign flip: most recent window should have SPX positive
-    if df["SPX_load"].iloc[-1] < 0:
-        df[["SPX_load", "USGG10YR_load", "DXY_load"]] *= -1
-
-    # Spike-killer
-    load_cols = ["SPX_load", "USGG10YR_load", "DXY_load"]
-    arr = df[load_cols].to_numpy()
-    n = len(arr)
-    if n >= 3:
-        for i in range(1, n - 1):
-            prev_diff = np.abs(arr[i] - arr[i - 1]).max()
-            next_diff = np.abs(arr[i] - arr[i + 1]).max()
-            flipped_diff_prev = np.abs(-arr[i] - arr[i - 1]).max()
-            flipped_diff_next = np.abs(-arr[i] - arr[i + 1]).max()
-            if (prev_diff > 0.8 and next_diff > 0.8 and
-                flipped_diff_prev < prev_diff * 0.5 and
-                flipped_diff_next < next_diff * 0.5):
-                arr[i] = -arr[i]
-        df[load_cols] = arr
-
     return df
 
 
 # Module version marker — bump when math changes so we can verify deployment
-__ANALYTICS_VERSION__ = "v3.0-2026-05-06"
+__ANALYTICS_VERSION__ = "v4.0-2026-05-06"
 
 
 # ---------------------------------------------------------------------------
