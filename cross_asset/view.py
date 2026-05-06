@@ -171,7 +171,6 @@ def render_cross_asset():
         return
 
     last_updated = datetime.fromtimestamp(mtime).strftime("%b %d, %Y · %H:%M")
-    returns = compute_returns(prices)
 
     # -------------------------------------------------------------------
     # Sidebar — controls
@@ -180,9 +179,42 @@ def render_cross_asset():
         st.markdown("**CROSS-ASSET CONTROLS**")
         window = st.select_slider(
             "Rolling window (trading days)",
-            options=[20, 30, 42, 60, 90, 126, 252],
-            value=60,
+            options=[10, 15, 20, 25, 30, 42, 60, 90, 126, 252],
+            value=20,
             key="ca_window",
+        )
+
+        scaling = st.radio(
+            "Return scaling",
+            options=["zscore", "volscale"],
+            index=0,
+            format_func=lambda x: {
+                "zscore":   "Z-score (within window)",
+                "volscale": "Vol-scale (trailing-vol divisor)",
+            }[x],
+            key="ca_scaling",
+            help=(
+                "How returns are made comparable across assets before PCA. "
+                "Z-score uses each window's own mean/std (equivalent to PCA on "
+                "the correlation matrix). Vol-scale divides by trailing realized "
+                "vol — preserves cross-window comparability of magnitudes."
+            ),
+        )
+
+        weighting = st.radio(
+            "Window weighting",
+            options=["equal", "ewm"],
+            index=0,
+            format_func=lambda x: {
+                "equal": "Equal-weighted",
+                "ewm":   "Exponential (halflife = window/3)",
+            }[x],
+            key="ca_weighting",
+            help=(
+                "Within each rolling window, do recent days weight more? "
+                "Equal = standard rolling. EWM = exponential decay, recent days "
+                "carry more weight (smoother curves, faster response to regime change)."
+            ),
         )
 
         st.markdown("---")
@@ -195,6 +227,9 @@ def render_cross_asset():
             st.cache_data.clear()
             st.rerun()
         st.caption(f"⚙ Analytics: `{__ANALYTICS_VERSION__}`")
+
+    # Compute returns according to chosen method
+    returns = compute_returns(prices, vol_scale=(scaling == "volscale"))
 
     # -------------------------------------------------------------------
     # Header
@@ -226,10 +261,10 @@ def render_cross_asset():
     col_left, col_right = st.columns(2)
 
     with col_left:
-        _render_correlations_panel(returns, window)
+        _render_correlations_panel(returns, window, weighting)
 
     with col_right:
-        _render_dominant_theme_panel(returns, window)
+        _render_dominant_theme_panel(returns, window, weighting)
 
     # -------------------------------------------------------------------
     # Below the fold: raw price levels (overview)
@@ -241,7 +276,7 @@ def render_cross_asset():
 # ---------------------------------------------------------------------------
 # Panel 1: Pairwise rolling correlations
 # ---------------------------------------------------------------------------
-def _render_correlations_panel(returns: pd.DataFrame, window: int):
+def _render_correlations_panel(returns: pd.DataFrame, window: int, weighting: str):
     st.markdown(
         """
         <div style="font-size:14px;font-weight:700;letter-spacing:0.06em;color:#fbbf24;
@@ -263,7 +298,7 @@ def _render_correlations_panel(returns: pd.DataFrame, window: int):
     )
 
     # ---- Latest pairwise correlations as headline numbers ----
-    latest = latest_pairwise_corrs(returns, window=window)
+    latest = latest_pairwise_corrs(returns, window=window, weighting=weighting)
 
     for pair_key, pair_label in PAIR_LABELS.items():
         rho = latest[pair_key]
@@ -290,7 +325,7 @@ def _render_correlations_panel(returns: pd.DataFrame, window: int):
         )
 
     # ---- Rolling correlation chart ----
-    rolled = rolling_pairwise_corrs(returns, window=window)
+    rolled = rolling_pairwise_corrs(returns, window=window, weighting=weighting)
 
     fig = go.Figure()
     for pair_key in PAIR_LABELS:
@@ -333,7 +368,7 @@ def _render_correlations_panel(returns: pd.DataFrame, window: int):
 # ---------------------------------------------------------------------------
 # Panel 2: Dominant theme (PCA)
 # ---------------------------------------------------------------------------
-def _render_dominant_theme_panel(returns: pd.DataFrame, window: int):
+def _render_dominant_theme_panel(returns: pd.DataFrame, window: int, weighting: str):
     st.markdown(
         """
         <div style="font-size:14px;font-weight:700;letter-spacing:0.06em;color:#fbbf24;
@@ -359,7 +394,7 @@ def _render_dominant_theme_panel(returns: pd.DataFrame, window: int):
         unsafe_allow_html=True,
     )
 
-    pca = pca_dominant_theme(returns, window=window)
+    pca = pca_dominant_theme(returns, window=window, weighting=weighting)
     explained = pca["explained_variance"]
     loadings = pca["loadings"]
 
@@ -422,7 +457,7 @@ def _render_dominant_theme_panel(returns: pd.DataFrame, window: int):
             )
 
     # ---- Rolling loadings chart ----
-    roll = rolling_pca_loadings(returns, window=window)
+    roll = rolling_pca_loadings(returns, window=window, weighting=weighting)
 
     # Low-confidence mask: when PC1 is not really dominant
     # (eigenvalue gap is small OR explained variance is low)
