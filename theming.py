@@ -23,12 +23,26 @@ AMBER = "#fbbf24"
 BLUE = "#60a5fa"
 
 CATEGORY_COLORS = {
-    "Theme": "#4ade80",
-    "Precious Metals": "#d4af37",
-    "Industrial Metals": "#b87333",
-    "Energy": "#ff6b35",
-    "Softs": "#a0522d",
-    "Livestock": "#c97064",
+    # ETF buckets
+    "Tech":                "#60a5fa",   # blue
+    "Materials & Mining":  "#b87333",   # copper
+    "Energy & Power":      "#fbbf24",   # amber
+    "Defensive":           "#a78bfa",   # purple
+    "Cyclical":            "#f97316",   # orange
+    "Growth & Bio":        "#34d399",   # emerald
+    "Speculative":         "#ec4899",   # pink
+    "International":       "#06b6d4",   # cyan
+    "Real Estate":         "#84cc16",   # lime
+    "Financials":          "#10b981",   # green
+    "Bonds":               "#94a3b8",   # slate
+    # Commodity buckets
+    "Precious Metals":     "#d4af37",
+    "Industrial Metals":   "#cd7f32",
+    "Energy":              "#ff6b35",
+    "Softs":               "#a0522d",
+    "Livestock":           "#c97064",
+    # Legacy fallback (just in case any "Theme" rows remain)
+    "Theme":               "#4ade80",
 }
 
 DARK_LAYOUT = dict(
@@ -74,7 +88,7 @@ header {visibility: hidden;}
 .block-container {
     padding-top: 1.5rem;
     padding-bottom: 2rem;
-    max-width: 1400px;
+    max-width: 1700px;
 }
 
 [data-testid="stDataFrame"] { background: #0a0a0a; }
