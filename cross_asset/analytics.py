@@ -106,13 +106,25 @@ def pca_dominant_theme(returns: pd.DataFrame, window: int = 60) -> dict:
 def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60) -> pd.DataFrame:
     """
     Rolling PC1 loadings over time. For each day t, compute PCA on the
-    preceding `window` days. Returns DataFrame indexed by Date with
-    columns: SPX_load, USGG10YR_load, DXY_load, ExplainedVar.
-    Sign of loadings is anchored so SPX_load >= 0.
+    preceding `window` days. Returns DataFrame indexed by Date with columns:
+      SPX_load, USGG10YR_load, DXY_load, ExplainedVar, EigGap
+
+    Sign convention:
+      - Within the time series, signs are aligned to the previous day's PC1
+        so the curves don't randomly flip when SPX_load is near zero.
+      - The entire series is then globally flipped (if needed) so that the
+        MOST RECENT window has positive SPX loading. This way the dashboard's
+        "current" reading always shows SPX as positive, matching the
+        interpretation in pca_dominant_theme().
+
+    EigGap = (lambda1 - lambda2) / lambda1.  When small (<~0.15), PC1 and
+    PC2 are nearly equal in importance; the loadings are unreliable and
+    callers should fade or filter those rows.
     """
     cols = list(returns.columns)
     spx_idx = cols.index("SPX")
     out_records = []
+    prev_pc1 = None
 
     for end_idx in range(window, len(returns) + 1):
         sub = returns.iloc[end_idx - window:end_idx]
@@ -122,19 +134,41 @@ def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60) -> pd.DataFram
         cov = z.cov().values
         eig_vals, eig_vecs = np.linalg.eigh(cov)
         idx = np.argsort(eig_vals)[::-1]
-        pc1 = eig_vecs[:, idx[0]]
-        if pc1[spx_idx] < 0:
-            pc1 = -pc1
-        explained = eig_vals[idx[0]] / eig_vals.sum()
+        eig_vals = eig_vals[idx]
+        eig_vecs = eig_vecs[:, idx]
+        pc1 = eig_vecs[:, 0]
+
+        # Within-time stability: align to previous day's PC1 (or to SPX>0
+        # for the very first window)
+        if prev_pc1 is None:
+            if pc1[spx_idx] < 0:
+                pc1 = -pc1
+        else:
+            if np.dot(pc1, prev_pc1) < 0:
+                pc1 = -pc1
+        prev_pc1 = pc1.copy()
+
+        eig_gap = float((eig_vals[0] - eig_vals[1]) / eig_vals[0])
+        explained = float(eig_vals[0] / eig_vals.sum())
+
         out_records.append({
             "Date": sub.index[-1],
             "SPX_load": float(pc1[cols.index("SPX")]),
             "USGG10YR_load": float(pc1[cols.index("USGG10YR")]),
             "DXY_load": float(pc1[cols.index("DXY")]),
-            "ExplainedVar": float(explained),
+            "ExplainedVar": explained,
+            "EigGap": eig_gap,
         })
 
-    return pd.DataFrame(out_records).set_index("Date")
+    df = pd.DataFrame(out_records).set_index("Date")
+
+    # Final global sign flip: ensure the MOST RECENT window has SPX positive,
+    # so the dashboard's "current" reading is intuitive. This preserves
+    # all relative motion within the series.
+    if not df.empty and df["SPX_load"].iloc[-1] < 0:
+        df[["SPX_load", "USGG10YR_load", "DXY_load"]] *= -1
+
+    return df
 
 
 # ---------------------------------------------------------------------------

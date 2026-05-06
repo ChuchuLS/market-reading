@@ -46,26 +46,72 @@ PAIR_LABELS = {
 
 @st.cache_data(show_spinner=False)
 def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
-    """Read CROSSASSET.xlsx and return clean prices DataFrame indexed by Date."""
-    raw = pd.read_excel(path)
-    # Find the Date column case-insensitively
-    cols_lower = {c.lower(): c for c in raw.columns}
-    if "date" not in cols_lower:
-        raise ValueError(f"CROSSASSET.xlsx must have a 'Date' column. Found: {list(raw.columns)}")
-    raw = raw.rename(columns={cols_lower["date"]: "Date"})
-    raw["Date"] = pd.to_datetime(raw["Date"])
-    raw = raw.dropna(subset=["Date"]).sort_values("Date").set_index("Date")
+    """Read CROSSASSET.xlsx and return clean prices DataFrame indexed by Date.
 
-    # Tolerate variants in column names
+    Handles common BQL export quirks:
+      - First column may be a BQL "ID" column (with header labels in some rows)
+      - Calendar days included with weekend rows forward-filled from Friday
+      - Duplicate dates from BQL spilling
+      - Column names like "SPX Index", "USGG10YR Index", "DXY Curncy"
+    """
+    raw = pd.read_excel(path)
+
+    # ---- Step 1: identify the columns we care about -------------------
+    # Find the date column. The robust trick: we want a column whose values
+    # are EITHER already datetime64 dtype, OR strings that parse to dates,
+    # but NOT floats (which pandas will happily convert via Excel serials).
+    cols = list(raw.columns)
+    date_col = None
+    for c in cols:
+        col = raw[c]
+        # Already a datetime?
+        if pd.api.types.is_datetime64_any_dtype(col):
+            date_col = c
+            break
+        # Object dtype that parses to dates?
+        if col.dtype == object:
+            parsed = pd.to_datetime(col, errors="coerce")
+            if parsed.notna().sum() / max(len(parsed), 1) > 0.8:
+                date_col = c
+                break
+    if date_col is None:
+        # Fallback: scan column NAMES for "date"
+        for c in cols:
+            if "date" in str(c).lower():
+                date_col = c
+                break
+    if date_col is None:
+        raise ValueError(
+            f"Couldn't find a Date column in CROSSASSET.xlsx. "
+            f"Columns found: {cols}"
+        )
+
+    raw[date_col] = pd.to_datetime(raw[date_col], errors="coerce")
+    raw = raw.rename(columns={date_col: "Date"})
+
+    # ---- Step 2: rename SPX / yield / DXY columns ---------------------
+    # Match by header substring AND require numeric data (the BQL "ID" column
+    # often shares the SPX header name but contains string labels).
     rename_map = {}
+    used = set()
     for c in raw.columns:
-        cu = c.upper().replace(" ", "")
-        if cu in ("SPX", "SPXINDEX"):
-            rename_map[c] = "SPX"
-        elif "USGG10" in cu or "UST10" in cu or cu in ("US10Y", "UST10Y"):
-            rename_map[c] = "USGG10YR"
-        elif cu in ("DXY", "DXYCURNCY", "DXYINDEX"):
-            rename_map[c] = "DXY"
+        if c == "Date" or c in used:
+            continue
+        col_data = raw[c]
+        # Must be numeric (or coercible to numeric) — skip the ID/label column
+        try:
+            numeric_share = pd.to_numeric(col_data, errors="coerce").notna().mean()
+        except Exception:
+            numeric_share = 0.0
+        if numeric_share < 0.5:
+            continue
+        cu = str(c).upper().replace(" ", "")
+        if "SPX" in cu and "SPX" not in rename_map.values():
+            rename_map[c] = "SPX"; used.add(c)
+        elif ("USGG10" in cu or "UST10" in cu or "US10" in cu) and "USGG10YR" not in rename_map.values():
+            rename_map[c] = "USGG10YR"; used.add(c)
+        elif "DXY" in cu and "DXY" not in rename_map.values():
+            rename_map[c] = "DXY"; used.add(c)
     raw = raw.rename(columns=rename_map)
 
     needed = ["SPX", "USGG10YR", "DXY"]
@@ -73,10 +119,33 @@ def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
     if missing:
         raise ValueError(
             f"CROSSASSET.xlsx is missing columns: {missing}. "
-            f"Required: SPX, USGG10YR (or UST10Y), DXY. Found: {list(raw.columns)}"
+            f"Required: a Date column plus SPX, USGG10YR (or UST10Y), DXY. "
+            f"Found: {list(raw.columns)}"
         )
 
-    return raw[needed].dropna()
+    df = raw[["Date"] + needed].copy()
+
+    # ---- Step 3: clean rows -------------------------------------------
+    # 3a. Drop rows where Date or any price is NaN (handles BQL header rows)
+    df = df.dropna(subset=["Date"] + needed)
+
+    # 3b. Numeric coercion (in case prices came in as strings)
+    for c in needed:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    df = df.dropna(subset=needed)
+
+    # 3c. Drop weekends — BQL exports often include Sat/Sun with prior-Friday
+    # values forward-filled, which corrupts return calculations
+    df["_dow"] = df["Date"].dt.dayofweek  # Mon=0, Sun=6
+    df = df[df["_dow"] < 5].drop(columns="_dow")
+
+    # 3d. De-duplicate on Date (BQL spilling sometimes repeats the last row)
+    df = df.sort_values("Date").drop_duplicates(subset=["Date"], keep="first")
+
+    # 3e. Set Date as index
+    df = df.set_index("Date")
+
+    return df
 
 
 # ===========================================================================
@@ -353,7 +422,37 @@ def _render_dominant_theme_panel(returns: pd.DataFrame, window: int):
     # ---- Rolling loadings chart ----
     roll = rolling_pca_loadings(returns, window=window)
 
+    # Low-confidence mask: when PC1 is not really dominant
+    # (eigenvalue gap is small OR explained variance is low)
+    low_conf_mask = (roll["EigGap"] < 0.15) | (roll["ExplainedVar"] < 0.45)
+
     fig = go.Figure()
+
+    # Shade low-confidence regions in the background
+    if low_conf_mask.any():
+        # Find contiguous low-confidence bands
+        in_band = False
+        band_start = None
+        for date, is_low in zip(roll.index, low_conf_mask):
+            if is_low and not in_band:
+                band_start = date
+                in_band = True
+            elif not is_low and in_band:
+                fig.add_vrect(
+                    x0=band_start, x1=date,
+                    fillcolor="rgba(120,120,120,0.12)",
+                    line=dict(width=0),
+                    layer="below",
+                )
+                in_band = False
+        if in_band:
+            fig.add_vrect(
+                x0=band_start, x1=roll.index[-1],
+                fillcolor="rgba(120,120,120,0.12)",
+                line=dict(width=0),
+                layer="below",
+            )
+
     fig.add_trace(go.Scatter(
         x=roll.index, y=roll["SPX_load"], mode="lines",
         name="SPX weight",
@@ -402,7 +501,8 @@ def _render_dominant_theme_panel(returns: pd.DataFrame, window: int):
 
     st.caption(
         f"Same sign = moving together in the theme · Opposite sign = diverging · "
-        f"PC1 explains {explained*100:.0f}% of variance"
+        f"PC1 explains {explained*100:.0f}% of variance currently · "
+        f"Gray bands = periods where the dominant theme is weak (loadings unreliable)."
     )
 
 
