@@ -470,7 +470,7 @@ with tab1:
                 v = r[c]
                 bg = cell_color(v)
                 fg = text_color_for(v)
-                txt = "—" if pd.isna(v) else f"{v:.2f}"
+                txt = "—" if pd.isna(v) else f"{v:.2f}%"
                 cells.append(
                     f'<td style="background:{bg};color:{fg};text-align:right;'
                     f'padding:6px 12px;font-family:JetBrains Mono,monospace;'
@@ -698,7 +698,7 @@ with tab3:
             cells.append(
                 f'<td style="background:{bg};color:{fg};text-align:right;'
                 f'padding:8px 12px;font-family:JetBrains Mono,monospace;'
-                f'font-size:11px;font-weight:600;">{v:.2f}</td>'
+                f'font-size:11px;font-weight:600;">{v:.2f}%</td>'
             )
         cat_rows_html.append(
             f'<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">'
