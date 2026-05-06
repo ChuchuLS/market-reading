@@ -266,12 +266,6 @@ def render_cross_asset():
     with col_right:
         _render_dominant_theme_panel(returns, window, weighting)
 
-    # -------------------------------------------------------------------
-    # Below the fold: raw price levels (overview)
-    # -------------------------------------------------------------------
-    st.markdown("---")
-    _render_price_levels(prices)
-
 
 # ---------------------------------------------------------------------------
 # Panel 1: Pairwise rolling correlations
