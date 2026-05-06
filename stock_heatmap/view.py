@@ -106,20 +106,24 @@ def render_stock_heatmap():
 
     # Load button — defer the slow fetch until user clicks
     cache_key = f"heatmap_data_{index_name}"
-    needs_load = cache_key not in st.session_state
+    needs_load = cache_key not in st.session_state or st.session_state[cache_key] is None
 
     cl, cr = st.columns([1, 5])
     with cl:
-        if st.button(
+        clicked = st.button(
             "⟳ Load / Refresh data" if needs_load else "⟳ Refresh data",
             use_container_width=True,
             type="primary" if needs_load else "secondary",
-        ):
-            # Clear our session cache for this index — but keep the @st.cache_data
-            # caches (those handle their own TTL). To force a true fresh fetch,
-            # use the sidebar "Refresh" button which calls st.cache_data.clear().
-            st.session_state[cache_key] = get_heatmap_data(index_name)
-            st.rerun()
+        )
+
+    if clicked:
+        # Run the fetch — diagnostics are emitted live via st.info / st.error
+        # inside get_heatmap_data, so don't st.rerun() after (that wipes them).
+        result = get_heatmap_data(index_name)
+        st.session_state[cache_key] = result
+        # If we got no data, stay on this screen so the user can see the error
+        if result is None or result.empty:
+            return
 
     if needs_load:
         st.info(
