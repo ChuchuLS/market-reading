@@ -15,6 +15,7 @@ import streamlit as st
 from theming import apply_theme
 from macro_tracker.view import render_macro_tracker
 from stock_heatmap.view import render_stock_heatmap
+from cross_asset.view import render_cross_asset
 
 
 # ---------------------------------------------------------------------------
@@ -50,9 +51,10 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 # Top-level horizontal tabs
 # ---------------------------------------------------------------------------
-top_tab_macro, top_tab_stocks = st.tabs([
+top_tab_macro, top_tab_stocks, top_tab_xasset = st.tabs([
     "📊 Macro Tracker",
     "🌐 Stock Heatmap",
+    "🔗 Cross-Asset",
 ])
 
 with top_tab_macro:
@@ -60,3 +62,6 @@ with top_tab_macro:
 
 with top_tab_stocks:
     render_stock_heatmap()
+
+with top_tab_xasset:
+    render_cross_asset()
