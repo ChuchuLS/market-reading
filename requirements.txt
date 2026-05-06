@@ -1,0 +1,43 @@
+# Macro Tracker
+
+A Streamlit dashboard for monitoring cross-asset performance across themes, equity ETFs, and commodity futures. Reads BQL output from Bloomberg.
+
+## Layout
+
+- **Header**: Breadth, leader, laggard at a glance
+- **Heatmap tab**: Sortable multi-timeframe table with green/red color scaling
+- **Leaders & Laggards tab**: Top/bottom N performers per timeframe
+- **Category Rotation tab**: Average performance per category across timeframes (spot rotation)
+- **Cross-Timeframe tab**: Scatter plot — short-term momentum vs longer-term trend
+
+## Setup
+
+```bash
+cd macro_tracker
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+App opens at `http://localhost:8501`.
+
+## Refreshing data
+
+1. In Bloomberg Excel, refresh your BQL sheet (the one with tickers in `K1:K57` and the formula in `B1`).
+2. Save it as `data/DATA.xlsx` (overwrite the existing file).
+3. In the dashboard sidebar, click **↻ Refresh**.
+
+The app reads the file's modification time as a cache key, so simply replacing the file is enough — the dashboard picks up changes on next refresh.
+
+## Required data format
+
+`data/DATA.xlsx` should have these columns in the first 6 columns:
+
+| ID | 1D | 1W | 1M | 3M | YTD |
+|----|-----|-----|-----|-----|-----|
+
+Where `ID` is the Bloomberg ticker (e.g. `SIL US Equity`, `GC1 Comdty`). The first row can either be the BQL-generated headers (`pct_chg(...)` strings) or your own labels — the loader uses position, not header names.
+
+## Data quality notes
+
+- **Theme ETFs may show 1D = 0** when the BQL sheet was refreshed outside US trading hours. The dashboard auto-detects this and shows a warning banner.
+- **Front-month commodity futures** (CL1, HO1, XB1, etc.) accumulate roll yield in their continuous time series, which can produce extreme multi-month % changes that don't reflect actual returns. Treat YTD on these with caution; consider switching to total-return indices (e.g. `SPGSCL Index`) in your BQL query if precision matters.
