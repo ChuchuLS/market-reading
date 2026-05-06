@@ -63,11 +63,40 @@ def get_sp500_constituents() -> list[str]:
         return sorted(set(NDX_100))
 
 
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def get_ndx100_constituents() -> list[str]:
+    """Scrape Nasdaq 100 ticker list from Wikipedia. Falls back to hardcoded list."""
+    try:
+        url = "https://en.wikipedia.org/wiki/Nasdaq-100"
+        tables = pd.read_html(url)
+        # Wikipedia's Nasdaq-100 page has a "Components" table.
+        # The right table has columns including 'Ticker' or 'Symbol'.
+        for tbl in tables:
+            cols_lower = [str(c).lower() for c in tbl.columns]
+            if any("ticker" in c or "symbol" in c for c in cols_lower):
+                # Find the right column
+                for col in tbl.columns:
+                    if "ticker" in str(col).lower() or "symbol" in str(col).lower():
+                        tickers = [
+                            str(t).replace(".", "-").strip()
+                            for t in tbl[col].tolist()
+                            if pd.notna(t) and str(t).strip()
+                        ]
+                        if 90 <= len(tickers) <= 110:  # sanity check
+                            return sorted(set(tickers))
+        # No suitable table — fall back
+        st.warning("Couldn't parse Nasdaq 100 table from Wikipedia. Using hardcoded snapshot.")
+        return NDX_100
+    except Exception as e:
+        st.warning(f"Wikipedia Nasdaq 100 scrape failed: {e}. Using hardcoded snapshot.")
+        return NDX_100
+
+
 def get_index_tickers(index_name: str) -> list[str]:
     if index_name == "S&P 500":
         return get_sp500_constituents()
     elif index_name == "Nasdaq 100":
-        return NDX_100
+        return get_ndx100_constituents()
     elif index_name == "Dow Jones 30":
         return DOW_30
     elif index_name == "Russell 2000 (Top 50 proxy)":
@@ -77,8 +106,11 @@ def get_index_tickers(index_name: str) -> list[str]:
 
 # ---------------------------------------------------------------------------
 # Prices (fast path — batched yf.download)
+# Cache TTL is intentionally long (1 hour) because this app is public and
+# yfinance is rate-limited at the Streamlit Cloud IP level. Sharing the cache
+# across all users means the first click fetches, everyone else gets cached.
 # ---------------------------------------------------------------------------
-@st.cache_data(ttl=15 * 60, show_spinner=False)
+@st.cache_data(ttl=60 * 60, show_spinner=False)
 def fetch_prices(tickers: tuple[str, ...]) -> pd.DataFrame:
     """
     Pull 1-year daily closes for all tickers in batched calls.

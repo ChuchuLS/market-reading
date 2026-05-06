@@ -32,47 +32,61 @@ DATA_PATH = Path(__file__).parent / "data" / "DATA.xlsx"
 # ---------------------------------------------------------------------------
 # Ticker → (Name, Category) registry
 # ---------------------------------------------------------------------------
+# Categories are grouped into ETF buckets (above the line) and commodity
+# buckets (below). The CATEGORY_ORDER list below controls display ordering.
 TICKER_MAP = {
-    'SIL US Equity':   ('Silver Miners',         'Theme'),
-    'REMX US Equity':  ('Rare Earth Metals',     'Theme'),
-    'URA US Equity':   ('Uranium / Nuclear',     'Theme'),
-    'GDX US Equity':   ('Gold Miners',           'Theme'),
-    'COPX US Equity':  ('Copper Miners',         'Theme'),
-    'ARKX US Equity':  ('Space',                 'Theme'),
-    'WGMI US Equity':  ('Bitcoin Miners',        'Theme'),
-    'LIT US Equity':   ('Lithium / Battery',     'Theme'),
-    'XHB US Equity':   ('Homebuilders',          'Theme'),
-    'ARKG US Equity':  ('Genomics',              'Theme'),
-    'SLX US Equity':   ('Steel',                 'Theme'),
-    'ITA US Equity':   ('Aerospace & Defense',   'Theme'),
-    'XLE US Equity':   ('Energy ETF',            'Theme'),
-    'SMH US Equity':   ('Semiconductors',        'Theme'),
-    'KRE US Equity':   ('Regional Banks',        'Theme'),
-    'XLB US Equity':   ('Materials',             'Theme'),
-    'XLP US Equity':   ('Consumer Staples',      'Theme'),
-    'XRT US Equity':   ('Retail',                'Theme'),
-    'XLI US Equity':   ('Industrials',           'Theme'),
-    'XBI US Equity':   ('Biotech',               'Theme'),
-    'QTUM US Equity':  ('Quantum',               'Theme'),
-    'EEM US Equity':   ('Emerging Markets',      'Theme'),
-    'IYT US Equity':   ('Transports',            'Theme'),
-    'ROBO US Equity':  ('Robotics',              'Theme'),
-    'XLRE US Equity':  ('Real Estate',           'Theme'),
-    'BOTZ US Equity':  ('AI',                    'Theme'),
-    'JETS US Equity':  ('Airlines',              'Theme'),
-    'XLY US Equity':   ('Consumer Discretionary','Theme'),
-    'XLV US Equity':   ('Health Care',           'Theme'),
-    'TLT US Equity':   ('Long Term Treasuries',  'Theme'),
-    'IHI US Equity':   ('Medical Devices',       'Theme'),
-    'KWEB US Equity':  ('China Internet',        'Theme'),
-    'XLU US Equity':   ('Utilities',             'Theme'),
-    'SOCL US Equity':  ('Social Media',          'Theme'),
-    'IYZ US Equity':   ('Telecom',               'Theme'),
-    'HACK US Equity':  ('Cybersecurity',         'Theme'),
-    'VUG US Equity':   ('Growth Stocks',         'Theme'),
-    'DJUSCA Index':    ('Casinos',               'Theme'),
-    'SKYY US Equity':  ('Cloud Computing',       'Theme'),
-    'IGV US Equity':   ('Software',              'Theme'),
+    # --- Tech (8) ---
+    'SMH US Equity':   ('Semiconductors',        'Tech'),
+    'IGV US Equity':   ('Software',              'Tech'),
+    'SKYY US Equity':  ('Cloud Computing',       'Tech'),
+    'HACK US Equity':  ('Cybersecurity',         'Tech'),
+    'BOTZ US Equity':  ('AI',                    'Tech'),
+    'ROBO US Equity':  ('Robotics',              'Tech'),
+    'QTUM US Equity':  ('Quantum',               'Tech'),
+    'SOCL US Equity':  ('Social Media',          'Tech'),
+    # --- Materials & Mining (7) ---
+    'SIL US Equity':   ('Silver Miners',         'Materials & Mining'),
+    'GDX US Equity':   ('Gold Miners',           'Materials & Mining'),
+    'COPX US Equity':  ('Copper Miners',         'Materials & Mining'),
+    'REMX US Equity':  ('Rare Earth Metals',     'Materials & Mining'),
+    'LIT US Equity':   ('Lithium / Battery',     'Materials & Mining'),
+    'SLX US Equity':   ('Steel',                 'Materials & Mining'),
+    'XLB US Equity':   ('Materials',             'Materials & Mining'),
+    # --- Energy & Power (3) ---
+    'XLE US Equity':   ('Energy ETF',            'Energy & Power'),
+    'URA US Equity':   ('Uranium / Nuclear',     'Energy & Power'),
+    'XLU US Equity':   ('Utilities',             'Energy & Power'),
+    # --- Defensive (4) ---
+    'XLP US Equity':   ('Consumer Staples',      'Defensive'),
+    'XLV US Equity':   ('Health Care',           'Defensive'),
+    'IHI US Equity':   ('Medical Devices',       'Defensive'),
+    'IYZ US Equity':   ('Telecom',               'Defensive'),
+    # --- Cyclical (8) ---
+    'XLY US Equity':   ('Consumer Discretionary','Cyclical'),
+    'XRT US Equity':   ('Retail',                'Cyclical'),
+    'XHB US Equity':   ('Homebuilders',          'Cyclical'),
+    'XLI US Equity':   ('Industrials',           'Cyclical'),
+    'IYT US Equity':   ('Transports',            'Cyclical'),
+    'JETS US Equity':  ('Airlines',              'Cyclical'),
+    'DJUSCA Index':    ('Casinos',               'Cyclical'),
+    'ITA US Equity':   ('Aerospace & Defense',   'Cyclical'),
+    # --- Growth & Bio (3) ---
+    'VUG US Equity':   ('Growth Stocks',         'Growth & Bio'),
+    'ARKG US Equity':  ('Genomics',              'Growth & Bio'),
+    'XBI US Equity':   ('Biotech',               'Growth & Bio'),
+    # --- Speculative (2) ---
+    'WGMI US Equity':  ('Bitcoin Miners',        'Speculative'),
+    'ARKX US Equity':  ('Space',                 'Speculative'),
+    # --- International (2) ---
+    'EEM US Equity':   ('Emerging Markets',      'International'),
+    'KWEB US Equity':  ('China Internet',        'International'),
+    # --- Real Estate (1) ---
+    'XLRE US Equity':  ('Real Estate',           'Real Estate'),
+    # --- Financials (1) ---
+    'KRE US Equity':   ('Regional Banks',        'Financials'),
+    # --- Bonds (1) ---
+    'TLT US Equity':   ('Long Term Treasuries',  'Bonds'),
+    # --- Commodities ---
     'GC1 Comdty':      ('Gold',                  'Precious Metals'),
     'SI1 Comdty':      ('Silver',                'Precious Metals'),
     'PL1 Comdty':      ('Platinum',              'Precious Metals'),
@@ -92,6 +106,17 @@ TICKER_MAP = {
     'LH1 Comdty':      ('Lean Hogs',             'Livestock'),
 }
 
+# Display order — controls how categories appear in dropdowns and table sorts
+CATEGORY_ORDER_ETF = [
+    "Tech", "Materials & Mining", "Energy & Power", "Defensive", "Cyclical",
+    "Growth & Bio", "Speculative", "International", "Real Estate",
+    "Financials", "Bonds",
+]
+CATEGORY_ORDER_COMDTY = [
+    "Precious Metals", "Industrial Metals", "Energy", "Softs", "Livestock",
+]
+CATEGORY_ORDER = CATEGORY_ORDER_ETF + CATEGORY_ORDER_COMDTY
+
 
 # ---------------------------------------------------------------------------
 # Data loading
@@ -110,24 +135,15 @@ def load_data(path: Path, _mtime: float) -> pd.DataFrame:
         if ticker in TICKER_MAP:
             name, cat = TICKER_MAP[ticker]
             # Classify instrument type from the Bloomberg suffix.
-            # Comdty = commodity future; Equity/Index = ETF or equity index.
             if ticker.endswith("Comdty"):
                 itype = "Comdty"
             else:
                 itype = "ETF"
 
-            d_val = float(r["1D"])
-            # 1D=0 for ETFs is almost always a BQL artifact (query ran outside US
-            # market hours so today's px_last == yesterday's close). Real ETF 1D
-            # returns are essentially never exactly 0.00%. Treat as missing for ETFs;
-            # keep as-is for commodity futures (they trade 23h, so 0 is plausible).
-            if itype == "ETF" and d_val == 0.0:
-                d_val = float("nan")
-
             rows.append({
                 "Category": cat, "Name": name, "Ticker": ticker,
                 "InstrumentType": itype,
-                "1D": d_val, "1W": float(r["1W"]), "1M": float(r["1M"]),
+                "1D": float(r["1D"]), "1W": float(r["1W"]), "1M": float(r["1M"]),
                 "3M": float(r["3M"]), "YTD": float(r["YTD"]),
             })
     return pd.DataFrame(rows)
@@ -180,10 +196,8 @@ def render_macro_tracker():
                                   key="mt_cat")
         search = st.text_input("Search", placeholder="Filter name or ticker…",
                                label_visibility="collapsed", key="mt_search")
-        sort_col = st.selectbox("Sort by", COLS, index=4, key="mt_sort_col")
-        sort_dir = st.radio("Direction", ["Descending", "Ascending"],
-                            index=0, horizontal=True,
-                            label_visibility="collapsed", key="mt_sort_dir")
+        sort_col = "YTD"
+        sort_dir = "Descending"
 
         st.markdown("---")
         st.markdown("**DATA**")
@@ -271,8 +285,12 @@ def render_macro_tracker():
 # ===========================================================================
 # Sub-tab renderers
 # ===========================================================================
-def _render_table(rows_df: pd.DataFrame, title: str, subtitle: str):
-    """Render a single heatmap table for a subset of instruments."""
+def _render_table(rows_df: pd.DataFrame, title: str, subtitle: str, sort_key_prefix: str):
+    """Render a single heatmap table for a subset of instruments.
+
+    Adds a row of clickable column header buttons that sort the table.
+    Sort state is stored in st.session_state under the given prefix.
+    """
     st.markdown(
         f"""
         <div style="font-size:14px;font-weight:700;letter-spacing:0.04em;color:#fff;
@@ -291,6 +309,61 @@ def _render_table(rows_df: pd.DataFrame, title: str, subtitle: str):
         st.caption("No instruments in this group.")
         return
 
+    # ---- Sort state ----
+    sort_col_state = f"{sort_key_prefix}_sort_col"
+    sort_dir_state = f"{sort_key_prefix}_sort_dir"
+    if sort_col_state not in st.session_state:
+        st.session_state[sort_col_state] = "YTD"
+        st.session_state[sort_dir_state] = "desc"
+
+    def _toggle_sort(col: str):
+        if st.session_state[sort_col_state] == col:
+            st.session_state[sort_dir_state] = (
+                "asc" if st.session_state[sort_dir_state] == "desc" else "desc"
+            )
+        else:
+            st.session_state[sort_col_state] = col
+            # Default direction depends on column type
+            st.session_state[sort_dir_state] = (
+                "asc" if col in ("Category", "Name", "Ticker") else "desc"
+            )
+
+    # ---- Header row: Streamlit-button column headers ----
+    # 8 columns: Category, Name, Ticker, 1D, 1W, 1M, 3M, YTD
+    # Width ratios chosen to roughly match the table cell widths below.
+    HEADER_RATIOS = [2.5, 2.8, 1.8, 1.2, 1.2, 1.2, 1.2, 1.2]
+    cols = st.columns(HEADER_RATIOS)
+    HEADER_LABELS = ["Category", "Name", "Ticker"] + COLS
+
+    cur_col = st.session_state[sort_col_state]
+    cur_dir = st.session_state[sort_dir_state]
+
+    for col_idx, (col_widget, label) in enumerate(zip(cols, HEADER_LABELS)):
+        # Sort indicator
+        indicator = ""
+        if label == cur_col:
+            indicator = "  ↓" if cur_dir == "desc" else "  ↑"
+
+        align = "left" if col_idx < 3 else "right"
+        with col_widget:
+            # Use a tiny button with a key per (table, label)
+            st.button(
+                f"{label}{indicator}",
+                key=f"{sort_key_prefix}_btn_{label}",
+                on_click=_toggle_sort, args=(label,),
+                use_container_width=True,
+            )
+
+    # ---- Apply sort ----
+    sort_col = st.session_state[sort_col_state]
+    asc = st.session_state[sort_dir_state] == "asc"
+    if sort_col in ("Category", "Name", "Ticker"):
+        rows_df = rows_df.sort_values(sort_col, ascending=asc, kind="stable")
+    else:
+        # Numeric: NaN goes last regardless of direction
+        rows_df = rows_df.sort_values(sort_col, ascending=asc, na_position="last", kind="stable")
+
+    # ---- Build rows HTML ----
     rows_html = []
     for _, r in rows_df.iterrows():
         cat_dot = CATEGORY_COLORS.get(r["Category"], "#888")
@@ -317,27 +390,11 @@ def _render_table(rows_df: pd.DataFrame, title: str, subtitle: str):
             + "".join(cells) + "</tr>"
         )
 
-    header_html = (
-        '<tr style="border-bottom:1px solid rgba(255,255,255,0.1);'
-        'background:rgba(255,255,255,0.02);">'
-        + ''.join(
-            f'<th style="text-align:left;padding:10px 12px;font-size:10px;'
-            f'text-transform:uppercase;letter-spacing:0.1em;color:#888;'
-            f'font-weight:500;">{h}</th>'
-            for h in ["Category", "Name", "Ticker"]
-        )
-        + ''.join(
-            f'<th style="text-align:right;padding:10px 12px;font-size:10px;'
-            f'text-transform:uppercase;letter-spacing:0.1em;color:#888;'
-            f'font-weight:500;">{c}</th>'
-            for c in COLS
-        )
-        + '</tr>'
-    )
     table_html = (
-        '<div style="border:1px solid #1a1a1a;background:#0a0a0a;overflow-x:auto;">'
+        '<div style="border:1px solid #1a1a1a;background:#0a0a0a;overflow-x:auto;'
+        'margin-top:-0.5rem;">'
         '<table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;">'
-        + header_html + ''.join(rows_html) + '</table></div>'
+        + ''.join(rows_html) + '</table></div>'
     )
     st.markdown(table_html, unsafe_allow_html=True)
 
@@ -350,7 +407,7 @@ def _render_heatmap(view: pd.DataFrame, df: pd.DataFrame):
                     margin-bottom:0.25rem;">PERFORMANCE HEATMAP</div>
         <div style="font-size:10px;color:#888;letter-spacing:0.08em;text-transform:uppercase;
                     margin-bottom:1rem;">
-          Multi-timeframe scoreboard \u00b7 ETFs and commodities shown separately \u00b7 color scale capped at \u00b130%
+          Multi-timeframe scoreboard \u00b7 click column headers to sort \u00b7 color scale capped at \u00b130%
         </div>
         """,
         unsafe_allow_html=True,
@@ -366,19 +423,21 @@ def _render_heatmap(view: pd.DataFrame, df: pd.DataFrame):
     _render_table(
         etfs,
         "EQUITIES & ETFS",
-        f"{len(etfs)} instruments \u00b7 themes & sector ETFs",
+        f"{len(etfs)} instruments \u00b7 grouped into {etfs['Category'].nunique()} sectors",
+        sort_key_prefix="etf_table",
     )
 
     _render_table(
         comdty,
         "COMMODITY FUTURES",
         f"{len(comdty)} instruments \u00b7 front-month continuous contracts",
+        sort_key_prefix="comdty_table",
     )
 
     st.caption(
         f"{len(view)} of {len(df)} instruments shown \u00b7 "
-        f"1D values for ETFs are blanked when the BQL pull occurred outside US "
-        f"market hours (today\u2019s close == prior close \u21d2 0%, treated as missing)."
+        f"ETF 1D values are 0% when the BQL pull ran outside US market hours "
+        f"(today\u2019s close == prior close). Refresh BQL during US trading hours for live 1D."
     )
 
 
