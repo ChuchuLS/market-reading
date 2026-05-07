@@ -669,22 +669,34 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
                 layer="below",
             )
 
+    # Mask out gray-band (low-confidence) days from the line traces themselves.
+    # Plotly draws None/NaN as line breaks, so loadings will only appear on
+    # days where they're statistically reliable. The gray rectangles still
+    # show the user that those periods exist; the loading values just don't
+    # mislead by suggesting precise readings on uncertain days.
+    spx_masked = roll["SPX_load"].where(~low_conf_mask)
+    ust_masked = roll["USGG10YR_load"].where(~low_conf_mask)
+    dxy_masked = roll["DXY_load"].where(~low_conf_mask)
+
     fig.add_trace(go.Scatter(
-        x=roll.index, y=roll["SPX_load"], mode="lines",
+        x=roll.index, y=spx_masked, mode="lines",
         name="SPX weight",
         line=dict(color=COLOR_SPX, width=1.4),
+        connectgaps=False,
         hovertemplate="<b>SPX</b><br>%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
-        x=roll.index, y=roll["USGG10YR_load"], mode="lines",
+        x=roll.index, y=ust_masked, mode="lines",
         name="UST 10Y weight",
         line=dict(color=COLOR_UST10Y, width=1.4),
+        connectgaps=False,
         hovertemplate="<b>UST 10Y</b><br>%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
-        x=roll.index, y=roll["DXY_load"], mode="lines",
+        x=roll.index, y=dxy_masked, mode="lines",
         name="DXY weight",
         line=dict(color=COLOR_DXY, width=1.4),
+        connectgaps=False,
         hovertemplate="<b>DXY</b><br>%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
     ))
     fig.add_hline(y=0, line=dict(color="rgba(255,255,255,0.2)", width=1))
@@ -719,7 +731,8 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
         f"Same sign = moving together in the theme · Opposite sign = diverging · "
         f"PC1 explains {explained*100:.0f}% of variance currently · "
         f"Gray bands = days where loadings are unreliable "
-        f"(PC1 explains <50% of variance OR eigenvalue gap <0.15)."
+        f"(PC1 explains <50% of variance OR eigenvalue gap <0.15). "
+        f"Lines drop out across those days to avoid showing unstable values."
     )
 
 
