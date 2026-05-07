@@ -209,81 +209,44 @@ def render_cross_asset():
         """,
         unsafe_allow_html=True,
     )
-    # ----- Quick presets — one-click param sets that work well together
-    pc1, pc2, pc3, pc4 = st.columns([1, 1, 1, 4])
+    # ----- Quick presets — sync both panels to the same methodology
+    pc1, pc2, pc3, pc_spacer = st.columns([1, 1, 1, 4])
     with pc1:
         if st.button("⚡ Standard", use_container_width=True, key="ca_preset_std",
-                     help="Honest about regime changes. Window=20, no smoothing, "
-                          "per-day SPX-positive anchor."):
-            st.session_state["ca_window"] = 20
+                     help="Both panels: window=20, no smoothing, per-day SPX-positive anchor."):
+            for ns in ("corr", "pca"):
+                st.session_state[f"{ns}_window"] = 20
+                st.session_state[f"{ns}_weighting"] = "equal"
             st.session_state["ca_scaling"] = "zscore"
-            st.session_state["ca_weighting"] = "equal"
-            st.session_state["ca_pca_method"] = "standard"
-            st.session_state["ca_presmooth"] = 0
+            st.session_state["pca_method"] = "standard"
+            st.session_state["pca_presmooth"] = 0
             st.rerun()
     with pc2:
         if st.button("〜 Smooth", use_container_width=True, key="ca_preset_smooth",
-                     help="Smooth trending curves. Window=90, halflife=15 "
-                          "pre-smoothing, Procrustes sign alignment."):
-            st.session_state["ca_window"] = 90
+                     help="Both panels: window=90, halflife=15 pre-smoothing, Procrustes."):
+            for ns in ("corr", "pca"):
+                st.session_state[f"{ns}_window"] = 90
+                st.session_state[f"{ns}_weighting"] = "equal"
             st.session_state["ca_scaling"] = "zscore"
-            st.session_state["ca_weighting"] = "equal"
-            st.session_state["ca_pca_method"] = "procrustes"
-            st.session_state["ca_presmooth"] = 15
+            st.session_state["pca_method"] = "procrustes"
+            st.session_state["pca_presmooth"] = 15
             st.rerun()
     with pc3:
         if st.button("≈ Very Smooth", use_container_width=True, key="ca_preset_vsmooth",
-                     help="Maximum smoothness. Window=120, halflife=20 "
-                          "pre-smoothing, Procrustes."):
-            st.session_state["ca_window"] = 120
+                     help="Both panels: window=120, halflife=20, EWM weighting, Procrustes."):
+            for ns in ("corr", "pca"):
+                st.session_state[f"{ns}_window"] = 120
+                st.session_state[f"{ns}_weighting"] = "ewm"
             st.session_state["ca_scaling"] = "zscore"
-            st.session_state["ca_weighting"] = "ewm"
-            st.session_state["ca_pca_method"] = "procrustes"
-            st.session_state["ca_presmooth"] = 20
+            st.session_state["pca_method"] = "procrustes"
+            st.session_state["pca_presmooth"] = 20
             st.rerun()
 
-    # Row 1: Window + Pre-smooth halflife + Refresh
-    r1c1, r1c2, r1c3 = st.columns([3, 2, 1])
-    with r1c1:
-        window = st.slider(
-            "Rolling window (trading days)",
-            min_value=5,
-            max_value=252,
-            value=st.session_state.get("ca_window", 20),
-            step=1,
-            key="ca_window",
-            help=(
-                "Number of trading days used in each rolling correlation/PCA "
-                "window. Common values: 20 (1 month), 60 (3 months), "
-                "126 (6 months), 252 (1 year). Shorter = more reactive but "
-                "noisier. Longer = smoother but more lag."
-            ),
-        )
-    with r1c2:
-        presmooth_halflife = st.select_slider(
-            "Pre-smooth halflife (days)",
-            options=[0, 3, 5, 10, 15, 20, 30],
-            value=st.session_state.get("ca_presmooth", 0),
-            key="ca_presmooth",
-            help=(
-                "EWMA filter applied to daily returns BEFORE rolling PCA. "
-                "0 = off. Higher values = smoother but more lag. "
-                "15-20 produces the trending curves seen in many published "
-                "cross-asset PCA dashboards."
-            ),
-        )
-    with r1c3:
-        st.markdown("<div style='font-size:10px;color:transparent;'>spacer</div>",
-                    unsafe_allow_html=True)
-        if st.button("↻ Refresh data", use_container_width=True, key="ca_refresh"):
-            st.cache_data.clear()
-            st.rerun()
-
-    # Row 2: 3 method radios
-    r2c1, r2c2, r2c3 = st.columns(3)
-    with r2c1:
+    # Top bar: Return scaling (shared, affects what "returns" means for both panels) + Refresh
+    tbc1, tbc2 = st.columns([6, 1])
+    with tbc1:
         scaling = st.radio(
-            "Return scaling",
+            "Return scaling (shared by both panels)",
             options=["zscore", "volscale"],
             index=["zscore", "volscale"].index(st.session_state.get("ca_scaling", "zscore")),
             format_func=lambda x: {
@@ -293,64 +256,43 @@ def render_cross_asset():
             key="ca_scaling",
             horizontal=True,
             help=(
-                "Z-score uses each window's own mean/std (PCA on correlation matrix). "
+                "Z-score uses each window's own mean/std (correlation matrix). "
                 "Vol-scale divides each return by its trailing realized vol — preserves "
-                "cross-window magnitude comparability."
+                "cross-window magnitude comparability. This setting is global because "
+                "it defines the meaning of 'returns' fed into both panels."
             ),
         )
-    with r2c2:
-        weighting = st.radio(
-            "Window weighting",
-            options=["equal", "ewm"],
-            index=["equal", "ewm"].index(st.session_state.get("ca_weighting", "equal")),
-            format_func=lambda x: {
-                "equal": "Equal",
-                "ewm":   "Exponential (halflife=W/3)",
-            }[x],
-            key="ca_weighting",
-            horizontal=True,
-            help=(
-                "Equal = standard rolling. EWM = exponential decay so recent days "
-                "carry more weight."
-            ),
-        )
-    with r2c3:
-        pca_method = st.radio(
-            "Sign convention",
-            options=["standard", "procrustes"],
-            index=["standard", "procrustes"].index(st.session_state.get("ca_pca_method", "standard")),
-            format_func=lambda x: {
-                "standard":   "Standard (per-day SPX+)",
-                "procrustes": "Procrustes (continuous)",
-            }[x],
-            key="ca_pca_method",
-            horizontal=True,
-            help=(
-                "Standard: anchor SPX positive each day independently. Honest about "
-                "regime changes; can show sign jitter when SPX_load crosses zero. "
-                "Procrustes: rotate each day's PC1 to align with the previous day's "
-                "PC1. Smooth curves; may obscure real regime changes."
-            ),
-        )
+    with tbc2:
+        st.markdown("<div style='font-size:10px;color:transparent;'>spacer</div>",
+                    unsafe_allow_html=True)
+        if st.button("↻ Refresh data", use_container_width=True, key="ca_refresh"):
+            st.cache_data.clear()
+            st.rerun()
 
-    # Build a one-line summary of current settings so user can always verify
-    # what methodology produced the numbers shown on the page
-    smoothing_str = f"halflife={presmooth_halflife}d" if presmooth_halflife > 0 else "off"
-    settings_str = (
-        f"window={window}d · scaling={scaling} · weighting={weighting} · "
-        f"sign={pca_method} · pre-smooth={smoothing_str} · filter=strict"
-    )
-    st.markdown(
-        f"""
+    # Read per-panel settings from session state (defaults same as old "Standard")
+    corr_window = st.session_state.get("corr_window", 20)
+    corr_weighting = st.session_state.get("corr_weighting", "equal")
+    pca_window = st.session_state.get("pca_window", 20)
+    pca_weighting = st.session_state.get("pca_weighting", "equal")
+    pca_method = st.session_state.get("pca_method", "standard")
+    pca_presmooth = st.session_state.get("pca_presmooth", 0)
+
+    # Build a two-line summary of current settings showing both panels' methodology
+    pca_smooth_str = f"halflife={pca_presmooth}d" if pca_presmooth > 0 else "off"
+    settings_html = f"""
         <div style="background:#0f0f0f;border:1px solid #2a2a2a;border-left:3px solid #fbbf24;
                     padding:0.5rem 0.75rem;margin:0.5rem 0;font-family:'JetBrains Mono',monospace;
-                    font-size:11px;color:#ccc;">
-          <span style="color:#fbbf24;font-weight:600;">CURRENT SETTINGS:</span>
-          {settings_str}
+                    font-size:11px;color:#ccc;line-height:1.7;">
+          <div><span style="color:#fbbf24;font-weight:600;">PAIRWISE CORR:</span>
+            window={corr_window}d · weighting={corr_weighting}</div>
+          <div><span style="color:#fbbf24;font-weight:600;">DOMINANT THEME:</span>
+            window={pca_window}d · weighting={pca_weighting} · sign={pca_method} ·
+            pre-smooth={pca_smooth_str}</div>
+          <div><span style="color:#fbbf24;font-weight:600;">SHARED:</span>
+            scaling={scaling} · filter=strict</div>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    """
+    st.markdown(settings_html, unsafe_allow_html=True)
 
     st.caption(
         f"📁 {DATA_PATH.name} · 🕐 {last_updated} · "
@@ -388,16 +330,16 @@ def render_cross_asset():
     col_left, col_right = st.columns(2)
 
     with col_left:
-        _render_correlations_panel(returns, window, weighting)
+        _render_correlations_panel(returns)
 
     with col_right:
-        _render_dominant_theme_panel(returns, window, weighting, pca_method, presmooth_halflife)
+        _render_dominant_theme_panel(returns)
 
 
 # ---------------------------------------------------------------------------
 # Panel 1: Pairwise rolling correlations
 # ---------------------------------------------------------------------------
-def _render_correlations_panel(returns: pd.DataFrame, window: int, weighting: str):
+def _render_correlations_panel(returns: pd.DataFrame):
     st.markdown(
         """
         <div style="font-size:14px;font-weight:700;letter-spacing:0.06em;color:#fbbf24;
@@ -417,6 +359,26 @@ def _render_correlations_panel(returns: pd.DataFrame, window: int, weighting: st
         """,
         unsafe_allow_html=True,
     )
+
+    # ---- Panel-local controls (independent of the Dominant Theme panel) ----
+    cc1, cc2 = st.columns([3, 2])
+    with cc1:
+        window = st.slider(
+            "Window (trading days)",
+            min_value=5, max_value=252, step=1,
+            value=st.session_state.get("corr_window", 20),
+            key="corr_window",
+            help="Rolling window for pairwise correlation. Bloomberg's default is 20.",
+        )
+    with cc2:
+        weighting = st.radio(
+            "Weighting",
+            options=["equal", "ewm"],
+            index=["equal", "ewm"].index(st.session_state.get("corr_weighting", "equal")),
+            format_func=lambda x: {"equal": "Equal", "ewm": "Exp (W/3)"}[x],
+            key="corr_weighting",
+            horizontal=True,
+        )
 
     # ---- Latest pairwise correlations as headline numbers ----
     latest = latest_pairwise_corrs(returns, window=window, weighting=weighting)
@@ -489,9 +451,7 @@ def _render_correlations_panel(returns: pd.DataFrame, window: int, weighting: st
 # ---------------------------------------------------------------------------
 # Panel 2: Dominant theme (PCA)
 # ---------------------------------------------------------------------------
-def _render_dominant_theme_panel(returns: pd.DataFrame, window: int,
-                                 weighting: str, pca_method: str = "standard",
-                                 presmooth_halflife: int = 0):
+def _render_dominant_theme_panel(returns: pd.DataFrame):
     st.markdown(
         """
         <div style="font-size:14px;font-weight:700;letter-spacing:0.06em;color:#fbbf24;
@@ -516,6 +476,56 @@ def _render_dominant_theme_panel(returns: pd.DataFrame, window: int,
         """,
         unsafe_allow_html=True,
     )
+
+    # ---- Panel-local controls (independent of the Pairwise panel) ----
+    pc1, pc2 = st.columns([3, 2])
+    with pc1:
+        window = st.slider(
+            "Window (trading days)",
+            min_value=5, max_value=252, step=1,
+            value=st.session_state.get("pca_window", 20),
+            key="pca_window",
+            help=(
+                "Rolling window for PCA decomposition. Longer windows give "
+                "smoother loading curves but lag regime changes."
+            ),
+        )
+    with pc2:
+        presmooth_halflife = st.select_slider(
+            "Pre-smooth halflife",
+            options=[0, 3, 5, 10, 15, 20, 30],
+            value=st.session_state.get("pca_presmooth", 0),
+            key="pca_presmooth",
+            help=(
+                "EWMA filter on returns BEFORE PCA. 0=off. Higher=smoother but "
+                "more lag. 15-20 produces trending curves seen in published "
+                "cross-asset PCA dashboards."
+            ),
+        )
+    pc3, pc4 = st.columns(2)
+    with pc3:
+        weighting = st.radio(
+            "Weighting",
+            options=["equal", "ewm"],
+            index=["equal", "ewm"].index(st.session_state.get("pca_weighting", "equal")),
+            format_func=lambda x: {"equal": "Equal", "ewm": "Exp (W/3)"}[x],
+            key="pca_weighting",
+            horizontal=True,
+        )
+    with pc4:
+        pca_method = st.radio(
+            "Sign convention",
+            options=["standard", "procrustes"],
+            index=["standard", "procrustes"].index(st.session_state.get("pca_method", "standard")),
+            format_func=lambda x: {"standard": "Per-day SPX+", "procrustes": "Procrustes"}[x],
+            key="pca_method",
+            horizontal=True,
+            help=(
+                "Per-day SPX+: anchor SPX positive each day. Honest about regime "
+                "changes, can show sign jitter. Procrustes: align with previous "
+                "day's PC1. Smooth curves, may obscure regime changes."
+            ),
+        )
 
     pca = pca_dominant_theme(returns, window=window, weighting=weighting)
     explained = pca["explained_variance"]
