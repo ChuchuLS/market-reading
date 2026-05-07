@@ -634,11 +634,13 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
     # Two failure modes flagged with the same gray band:
     #   (1) Math instability: eigenvalue gap < 0.15 — PC1/PC2 are nearly tied,
     #       so the chosen "dominant direction" is essentially arbitrary.
-    #   (2) Weak signal: PC1 explained variance < 0.60 — there's no truly
-    #       dominant theme, just three weakly-correlated forces.
-    # Threshold 0.60 matches the regime panel's strict EXP_VAR_THRESHOLD so
-    # the gray bands here align with "Mixed" days in the regime classifier.
-    low_conf_mask = (roll["EigGap"] < 0.15) | (roll["ExplainedVar"] < 0.60)
+    #   (2) Weak signal: PC1 explained variance < 0.50 — flags only genuinely
+    #       uninformative days. Note: this is looser than the regime panel's
+    #       0.60 threshold (which decides "Mixed" classification). The two
+    #       thresholds answer different questions:
+    #         - Gray band: "should I disclaim this loading reading?" (loose)
+    #         - Mixed bucket: "should this day get a clean sign-triple label?" (strict)
+    low_conf_mask = (roll["EigGap"] < 0.15) | (roll["ExplainedVar"] < 0.50)
 
     fig = go.Figure()
 
@@ -717,7 +719,7 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
         f"Same sign = moving together in the theme · Opposite sign = diverging · "
         f"PC1 explains {explained*100:.0f}% of variance currently · "
         f"Gray bands = days where loadings are unreliable "
-        f"(PC1 explains <60% of variance OR eigenvalue gap <0.15)."
+        f"(PC1 explains <50% of variance OR eigenvalue gap <0.15)."
     )
 
 
