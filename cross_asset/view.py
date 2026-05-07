@@ -551,15 +551,34 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
     signs = {a: ("pos" if v > 0 else "neg") for a, v in loadings.items()}
     same_sign = len(set(signs.values())) == 1
 
-    # Headline interpretation
-    biggest = max(loadings, key=lambda k: abs(loadings[k]))
+    # Headline interpretation — only call out a "dominant" asset when one loading
+    # meaningfully exceeds the others (gap >= 0.10). When all three are similar,
+    # PCA is saying they're equally participating, not that one is leading.
     label_map = {"SPX": "SPX", "USGG10YR": "UST 10Y", "DXY": "DXY"}
-    biggest_label = label_map[biggest]
+    sorted_by_mag = sorted(loadings.items(), key=lambda kv: abs(kv[1]), reverse=True)
+    largest_asset, largest_load = sorted_by_mag[0]
+    second_load = sorted_by_mag[1][1]
+    dominance_gap = abs(largest_load) - abs(second_load)
+    DOMINANCE_THRESHOLD = 0.10
+
+    if dominance_gap >= DOMINANCE_THRESHOLD:
+        weight_note = (
+            f'<b style="color:#fff;">{label_map[largest_asset]}</b> has the largest '
+            f'weight in this theme.'
+        )
+    else:
+        weight_note = (
+            'All three assets are participating with similar weight — no single '
+            'asset dominates the theme.'
+        )
 
     if same_sign:
-        direction_note = "All three assets are moving in the same direction within this theme."
+        direction_note = "All three are moving in the same direction within the theme."
     else:
-        direction_note = "The assets have mixed directions — some are moving with and some against the common theme."
+        direction_note = (
+            "The assets have mixed directions — some are moving with and some "
+            "against the common theme."
+        )
 
     st.markdown(
         f"""
@@ -569,7 +588,7 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
           <span style="color:#fbbf24;font-weight:600;">RIGHT NOW:</span>
           The dominant theme explains
           <b style="color:#fff;">{explained*100:.0f}%</b> of cross-asset moves.
-          <b style="color:#fff;">{biggest_label}</b> has the largest weight in this theme.
+          {weight_note}
           {direction_note}
         </div>
         """,
