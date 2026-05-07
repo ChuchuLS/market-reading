@@ -630,9 +630,15 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
                                 pca_method=pca_method,
                                 presmooth_halflife=presmooth_halflife)
 
-    # Low-confidence mask: when PC1 is not really dominant
-    # (eigenvalue gap is small OR explained variance is low)
-    low_conf_mask = (roll["EigGap"] < 0.15) | (roll["ExplainedVar"] < 0.45)
+    # Low-confidence mask: when PC1 is not really dominant.
+    # Two failure modes flagged with the same gray band:
+    #   (1) Math instability: eigenvalue gap < 0.15 — PC1/PC2 are nearly tied,
+    #       so the chosen "dominant direction" is essentially arbitrary.
+    #   (2) Weak signal: PC1 explained variance < 0.60 — there's no truly
+    #       dominant theme, just three weakly-correlated forces.
+    # Threshold 0.60 matches the regime panel's strict EXP_VAR_THRESHOLD so
+    # the gray bands here align with "Mixed" days in the regime classifier.
+    low_conf_mask = (roll["EigGap"] < 0.15) | (roll["ExplainedVar"] < 0.60)
 
     fig = go.Figure()
 
@@ -710,7 +716,8 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
     st.caption(
         f"Same sign = moving together in the theme · Opposite sign = diverging · "
         f"PC1 explains {explained*100:.0f}% of variance currently · "
-        f"Gray bands = periods where the dominant theme is weak (loadings unreliable)."
+        f"Gray bands = days where loadings are unreliable "
+        f"(PC1 explains <60% of variance OR eigenvalue gap <0.15)."
     )
 
 
