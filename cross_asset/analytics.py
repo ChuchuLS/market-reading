@@ -191,39 +191,59 @@ def pca_dominant_theme(returns: pd.DataFrame, window: int = 60,
 
 
 def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60,
-                         weighting: str = "equal") -> pd.DataFrame:
+                         weighting: str = "equal",
+                         pca_method: str = "standard",
+                         presmooth_halflife: int = 0) -> pd.DataFrame:
     """
     Rolling PC1 loadings over time. For each day t, compute weighted PCA on
     the preceding `window` days. Returns DataFrame indexed by Date with cols:
       SPX_load, USGG10YR_load, DXY_load, ExplainedVar, EigGap
 
-    weighting: "equal" or "ewm" (halflife = window/3).
+    Parameters
+    ----------
+    window : int
+        Rolling window length in days.
+    weighting : "equal" | "ewm"
+        Within-window weighting (passed to _make_weights).
+    pca_method : "standard" | "procrustes"
+        Sign convention only:
+          - "standard"   : Anchor SPX positive independently per day.
+                           Honest about regime changes; can show sign
+                           jitter when SPX_load crosses zero.
+          - "procrustes" : Rotate today's PC1 to be closest to yesterday's
+                           PC1 (sign continuity). Smoother curves; may
+                           obscure real regime changes.
+    presmooth_halflife : int
+        If > 0, pre-smooth daily returns with EWMA filter of this halflife
+        BEFORE running rolling PCA. Common values: 5 (light), 10 (moderate),
+        15-20 (heavy). 0 = no pre-smoothing.
 
-    Sign convention: PER-WINDOW SPX-positive anchor.
-      Each day's PC1 is independently flipped (if needed) so SPX_load >= 0.
-      This means UST10Y and DXY loadings reflect the TRUE correlation
-      structure within that window: when SPX/UST10Y are positively
-      correlated in the window, UST10Y_load will be positive; when
-      negatively correlated, UST10Y_load will be negative.
-
-      We do NOT use cross-window sign continuity, because that hides
-      legitimate regime changes (e.g., 'risk-on/yields up' vs
-      'risk-on/yields down' regimes).
-
-      Trade-off: in degenerate windows where SPX_load is near zero,
-      tiny numerical fluctuations can flip the sign and cause visible
-      jitter. The EigGap column flags those days; the chart shades them
-      gray to indicate low confidence.
+    Pre-smoothing and pca_method are independent — combining
+    `presmooth_halflife=15` with `pca_method="procrustes"` produces the
+    smoothest curves the model can generate.
     """
     cols = list(returns.columns)
     spx_idx = cols.index("SPX")
-    out_records = []
 
-    for end_idx in range(window, len(returns) + 1):
-        sub = returns.iloc[end_idx - window:end_idx]
+    # ---- Pre-smoothing: applied first, independent of PCA method ----------
+    if presmooth_halflife and presmooth_halflife > 0:
+        halflife = max(int(presmooth_halflife), 1)
+        returns_used = returns.ewm(halflife=halflife, min_periods=1).mean()
+    else:
+        returns_used = returns
+
+    out_records = []
+    prev_pc1 = None
+
+    for end_idx in range(window, len(returns_used) + 1):
+        sub = returns_used.iloc[end_idx - window:end_idx]
         if sub.isna().any().any():
             continue
-        z = ((sub - sub.mean()) / sub.std(ddof=1)).values
+        # Avoid degenerate std (e.g., if pre-smoothing made a column flat)
+        std = sub.std(ddof=1)
+        if (std == 0).any():
+            continue
+        z = ((sub - sub.mean()) / std).values
         w = _make_weights(len(sub), weighting)
         corr = _weighted_corr_matrix(z, w)
 
@@ -233,11 +253,19 @@ def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60,
         eig_vecs = eig_vecs[:, idx]
         pc1 = eig_vecs[:, 0]
 
-        # Anchor SPX positive on EVERY day. This is the right convention:
-        # UST10Y and DXY signs are then free to reflect their true
-        # correlation with SPX in this specific window.
-        if pc1[spx_idx] < 0:
-            pc1 = -pc1
+        # Sign convention
+        if pca_method == "procrustes":
+            if prev_pc1 is None:
+                if pc1[spx_idx] < 0:
+                    pc1 = -pc1
+            else:
+                if np.dot(pc1, prev_pc1) < 0:
+                    pc1 = -pc1
+            prev_pc1 = pc1.copy()
+        else:
+            # "standard": anchor SPX positive each day
+            if pc1[spx_idx] < 0:
+                pc1 = -pc1
 
         eig_gap = float((eig_vals[0] - eig_vals[1]) / eig_vals[0])
         explained = float(eig_vals[0] / eig_vals.sum())
@@ -252,11 +280,18 @@ def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60,
         })
 
     df = pd.DataFrame(out_records).set_index("Date")
+    if df.empty:
+        return df
+
+    # For procrustes only: ensure the LATEST window has SPX positive.
+    if pca_method == "procrustes" and df["SPX_load"].iloc[-1] < 0:
+        df[["SPX_load", "USGG10YR_load", "DXY_load"]] *= -1
+
     return df
 
 
 # Module version marker — bump when math changes so we can verify deployment
-__ANALYTICS_VERSION__ = "v4.0-2026-05-06"
+__ANALYTICS_VERSION__ = "v7.0-2026-05-06"
 
 
 # ---------------------------------------------------------------------------
