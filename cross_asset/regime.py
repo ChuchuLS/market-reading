@@ -26,19 +26,38 @@ from typing import Optional
 LOADING_MAGNITUDE_THRESHOLD = 0.30
 EXP_VAR_THRESHOLD = 0.60
 
+# ---- Persistence threshold for "Transitioning" relabel (Phase 2 v1.5) -----
+# Days with day-over-day cosine persistence below this threshold are
+# considered "rotating fast" and get relabeled regardless of their
+# instantaneous sign-triple. Catches 1-day blips during regime transitions.
+PERSISTENCE_THRESHOLD = 0.85
+
 # ---- Bucket definitions ----------------------------------------------------
 # Sign triples, in (SPX, UST10Y, DXY) order. Each maps to a stable label.
 BUCKET_ORDER = [
-    "+--",  # SPX+ 10Y- DXY-
-    "-++",  # SPX- 10Y+ DXY+
-    "--+",  # SPX- 10Y- DXY+
-    "++-",  # SPX+ 10Y+ DXY-
-    "+++",  # all positive
-    "+-+",  # SPX+ 10Y- DXY+
-    "-+-",  # SPX- 10Y+ DXY-
-    "---",  # all negative
-    "Mixed",
+    "+--",           # SPX+ 10Y- DXY-
+    "-++",           # SPX- 10Y+ DXY+
+    "--+",           # SPX- 10Y- DXY+
+    "++-",           # SPX+ 10Y+ DXY-
+    "+++",           # all positive
+    "+-+",           # SPX+ 10Y- DXY+
+    "-+-",           # SPX- 10Y+ DXY-
+    "---",           # all negative
+    "Mixed",         # weak / unreliable signal
+    "Transitioning", # high-rotation day (low persistence)
 ]
+
+# 8 sign-triples have an archetype unit vector. Used for soft-scoring.
+# The archetype is the unit vector pointing in the right sign direction
+# with equal magnitude on each axis: e.g. +-- → (+1, -1, -1) / sqrt(3).
+SIGN_TRIPLES = ["+--", "-++", "--+", "++-", "+++", "+-+", "-+-", "---"]
+
+def _triple_to_unit_vector(triple: str) -> np.ndarray:
+    """Convert a sign triple like '+--' to a unit vector in 3D."""
+    signs = np.array([1.0 if c == "+" else -1.0 for c in triple])
+    return signs / np.linalg.norm(signs)
+
+ARCHETYPES = {t: _triple_to_unit_vector(t) for t in SIGN_TRIPLES}
 
 # Display label expanded
 BUCKET_DISPLAY = {
@@ -50,21 +69,23 @@ BUCKET_DISPLAY = {
     "+-+":  "SPX+  10Y−  DXY+",
     "-+-":  "SPX−  10Y+  DXY−",
     "---":  "SPX−  10Y−  DXY−",
-    "Mixed": "Mixed",
+    "Mixed":         "Mixed",
+    "Transitioning": "Transitioning",
 }
 
 # Color palette — distinct, dashboard-aesthetic, dark-bg friendly.
 # Most-common patterns get more prominent colors.
 BUCKET_COLOR = {
-    "+--":  "#22c55e",   # green — risk-on classic
-    "-++":  "#ef4444",   # red — inflation/hawkish
-    "--+":  "#a855f7",   # purple — flight-to-quality-ish
-    "++-":  "#06b6d4",   # cyan — reflation-ish
-    "+++":  "#fbbf24",   # amber — broad rally
-    "+-+":  "#84cc16",   # lime — unusual
-    "-+-":  "#ec4899",   # pink — unusual
-    "---":  "#dc2626",   # dark red — broad de-risking
-    "Mixed": "#525252",  # gray — no signal
+    "+--":           "#22c55e",   # green — risk-on classic
+    "-++":           "#ef4444",   # red — inflation/hawkish
+    "--+":           "#a855f7",   # purple — flight-to-quality-ish
+    "++-":           "#06b6d4",   # cyan — reflation-ish
+    "+++":           "#fbbf24",   # amber — broad rally
+    "+-+":           "#84cc16",   # lime — unusual
+    "-+-":           "#ec4899",   # pink — unusual
+    "---":           "#dc2626",   # dark red — broad de-risking
+    "Mixed":         "#525252",   # gray — no signal
+    "Transitioning": "#f97316",   # orange — rotating
 }
 
 
@@ -269,4 +290,123 @@ def current_regime_info(
     }
 
 
-__REGIME_VERSION__ = "v1.0-2026-05-07"
+def soft_scores(loadings_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Cosine similarity of each day's (SPX, UST10Y, DXY) loading vector against
+    all 8 archetype sign-triples.
+
+    Returns a DataFrame indexed by date with one column per archetype
+    (8 columns total). Values range from -1.0 (perfectly opposite) to
+    +1.0 (perfectly aligned). The archetype with the highest similarity
+    on a given day is the "closest" sign-triple — equivalent to the hard
+    classification's argmax (subject to the strict thresholds).
+
+    Cosine vs full unit-vector match: a day with loadings (+0.6, -0.5, -0.6)
+    will score very high against the +-- archetype but moderate-positive
+    against +++ archetype because the SPX axis still aligns.
+    """
+    if loadings_df.empty:
+        return pd.DataFrame(index=loadings_df.index, columns=SIGN_TRIPLES, dtype=float)
+
+    cols = ["SPX_load", "USGG10YR_load", "DXY_load"]
+    V = loadings_df[cols].values
+    norms = np.linalg.norm(V, axis=1)
+
+    # For each archetype, compute V · archetype / |V|.
+    # Archetypes are already unit-length so we don't divide by their norms.
+    out = {}
+    for triple, archetype in ARCHETYPES.items():
+        dots = V @ archetype  # shape (T,)
+        out[triple] = np.where(norms > 0, dots / norms, np.nan)
+
+    return pd.DataFrame(out, index=loadings_df.index)
+
+
+def apply_persistence_filter(
+    regime_series: pd.Series,
+    persistence_series: pd.Series,
+    threshold: float = PERSISTENCE_THRESHOLD,
+) -> pd.Series:
+    """
+    Relabel any day where day-over-day cosine persistence is below `threshold`
+    as "Transitioning". Catches 1-day blips during regime rotations where the
+    eigenvector momentarily passes through a sign zone before settling.
+
+    Days where persistence is NaN (the very first day, or after gaps) are
+    left unchanged.
+    """
+    if regime_series.empty:
+        return regime_series
+
+    out = regime_series.copy()
+    aligned = persistence_series.reindex(out.index)
+    mask = aligned.notna() & (aligned < threshold)
+    out[mask] = "Transitioning"
+    return out
+
+
+def transitions_log(
+    regime_series: pd.Series,
+    persistence_series: pd.Series,
+    last_n: int = 20,
+) -> pd.DataFrame:
+    """
+    Log of regime change events. Each row represents a transition from one
+    regime to another, with metadata.
+
+    Columns:
+        Date         : day the new regime became active (transition day)
+        From         : previous regime label
+        To           : new regime label
+        Persistence  : MINIMUM persistence over the 5 days leading up to and
+                       including the transition. Captures the rotation magnitude
+                       even when the transition day itself looks stable.
+        DurationFrom : how many days the previous regime lasted
+
+    Returns the most recent `last_n` transitions, sorted newest-first.
+    """
+    if regime_series.empty or len(regime_series) < 2:
+        return pd.DataFrame(columns=[
+            "Date", "From", "To", "Persistence", "DurationFrom"
+        ])
+
+    runs = regime_runs(regime_series)
+    if len(runs) < 2:
+        return pd.DataFrame(columns=[
+            "Date", "From", "To", "Persistence", "DurationFrom"
+        ])
+
+    aligned_pers = persistence_series.reindex(regime_series.index)
+
+    transitions = []
+    for i in range(1, len(runs)):
+        prev_run = runs.iloc[i - 1]
+        curr_run = runs.iloc[i]
+        transition_date = curr_run["Start"]
+
+        # Min persistence over the 5 days ending at the transition day
+        # (lookback window for capturing rotation magnitude)
+        end_idx = aligned_pers.index.get_loc(transition_date)
+        start_idx = max(0, end_idx - 4)
+        window_pers = aligned_pers.iloc[start_idx:end_idx + 1].dropna()
+        if len(window_pers) > 0:
+            pers = float(window_pers.min())
+        else:
+            pers = None
+
+        transitions.append({
+            "Date":         transition_date,
+            "From":         prev_run["Regime"],
+            "To":           curr_run["Regime"],
+            "Persistence":  pers,
+            "DurationFrom": int(prev_run["Duration"]),
+        })
+
+    df = pd.DataFrame(transitions)
+    df = df.sort_values("Date", ascending=False).reset_index(drop=True)
+    if last_n:
+        df = df.head(last_n)
+    return df
+
+
+__REGIME_VERSION__ = "v1.5-2026-05-07"
