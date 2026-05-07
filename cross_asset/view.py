@@ -245,11 +245,19 @@ def render_cross_asset():
     # Row 1: Window + Pre-smooth halflife + Refresh
     r1c1, r1c2, r1c3 = st.columns([3, 2, 1])
     with r1c1:
-        window = st.select_slider(
+        window = st.slider(
             "Rolling window (trading days)",
-            options=[10, 15, 20, 25, 30, 42, 60, 90, 120, 150, 180, 252],
+            min_value=5,
+            max_value=252,
             value=st.session_state.get("ca_window", 20),
+            step=1,
             key="ca_window",
+            help=(
+                "Number of trading days used in each rolling correlation/PCA "
+                "window. Common values: 20 (1 month), 60 (3 months), "
+                "126 (6 months), 252 (1 year). Shorter = more reactive but "
+                "noisier. Longer = smoother but more lag."
+            ),
         )
     with r1c2:
         presmooth_halflife = st.select_slider(
