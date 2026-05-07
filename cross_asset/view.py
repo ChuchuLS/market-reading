@@ -24,6 +24,13 @@ from cross_asset.analytics import (
     correlation_story, loading_label,
     __ANALYTICS_VERSION__,
 )
+from cross_asset.regime import (
+    classify_loadings_series, cosine_persistence,
+    regime_runs, regime_stats, current_regime_info,
+    BUCKET_ORDER, BUCKET_DISPLAY, BUCKET_COLOR,
+    LOADING_MAGNITUDE_THRESHOLD, EXP_VAR_THRESHOLD,
+    __REGIME_VERSION__,
+)
 
 DATA_PATH = Path(__file__).parent / "data" / "CROSSASSET.xlsx"
 
@@ -325,15 +332,24 @@ def render_cross_asset():
     st.markdown("---")
 
     # -------------------------------------------------------------------
-    # Two-column layout: Pairwise Correlations | Dominant Theme
+    # Sub-tabs inside the Cross-Asset section
     # -------------------------------------------------------------------
-    col_left, col_right = st.columns(2)
+    tab_pairwise, tab_regime = st.tabs([
+        "📊 Correlations & Theme",
+        "🔬 Regime",
+    ])
 
-    with col_left:
-        _render_correlations_panel(returns)
+    with tab_pairwise:
+        col_left, col_right = st.columns(2)
 
-    with col_right:
-        _render_dominant_theme_panel(returns)
+        with col_left:
+            _render_correlations_panel(returns)
+
+        with col_right:
+            _render_dominant_theme_panel(returns)
+
+    with tab_regime:
+        _render_regime_panel(returns)
 
 
 # ---------------------------------------------------------------------------
@@ -675,6 +691,326 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
         f"Same sign = moving together in the theme · Opposite sign = diverging · "
         f"PC1 explains {explained*100:.0f}% of variance currently · "
         f"Gray bands = periods where the dominant theme is weak (loadings unreliable)."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Panel: Regime classification (8-bucket sign cube + persistence)
+# ---------------------------------------------------------------------------
+def _render_regime_panel(returns: pd.DataFrame):
+    """
+    8-bucket regime classification view. Reads the same window/weighting/sign
+    settings as the Dominant Theme panel (single source of truth), then layers
+    a categorical regime label on top of the rolling PCA loadings.
+    """
+    st.markdown(
+        """
+        <div style="font-size:14px;font-weight:700;letter-spacing:0.06em;color:#fbbf24;
+                    margin-bottom:0.4rem;">
+          REGIME CLASSIFICATION (8-BUCKET SIGN CUBE)
+        </div>
+        <div style="background:rgba(251,191,36,0.04);border:1px solid rgba(251,191,36,0.2);
+                    padding:0.75rem 1rem;font-size:11px;color:#ccc;line-height:1.6;
+                    margin-bottom:1rem;">
+          <span style="color:#fbbf24;font-weight:600;">What this shows:</span>
+          Mechanical labeling of each day's PC1 loadings by sign pattern. No economic
+          interpretation imposed — the bucket name is just the sign triple
+          (e.g. <code>+−−</code> means SPX positive, UST10Y negative, DXY negative).
+          <br>
+          A day is classified as <span style="color:#aaa;font-weight:600;">Mixed</span> when
+          the dominant theme is unreliable: PC1 explained variance below
+          <strong>{var:.0%}</strong>, or any loading magnitude below
+          <strong>{mag:.2f}</strong>. Strict thresholds keep "Mixed" honest as
+          "no clear signal" rather than forcing labels onto noise.
+        </div>
+        """.format(var=EXP_VAR_THRESHOLD, mag=LOADING_MAGNITUDE_THRESHOLD),
+        unsafe_allow_html=True,
+    )
+
+    # Reuse the Dominant Theme panel's settings — single source of truth so the
+    # regime view never disagrees with what the user sees in the loading chart.
+    pca_window = st.session_state.get("pca_window", 20)
+    pca_weighting = st.session_state.get("pca_weighting", "equal")
+    pca_method = st.session_state.get("pca_method", "standard")
+    pca_presmooth = st.session_state.get("pca_presmooth", 0)
+
+    smooth_str = f"halflife={pca_presmooth}d" if pca_presmooth > 0 else "off"
+    st.caption(
+        f"Using Dominant Theme settings: window={pca_window}d · "
+        f"weighting={pca_weighting} · sign={pca_method} · pre-smooth={smooth_str}"
+    )
+
+    # ---- Compute rolling loadings + classify --------------------------
+    loadings = rolling_pca_loadings(
+        returns,
+        window=pca_window,
+        weighting=pca_weighting,
+        pca_method=pca_method,
+        presmooth_halflife=pca_presmooth,
+    )
+
+    if loadings.empty or len(loadings) < 2:
+        st.warning(
+            "Not enough data to compute regimes. Try a shorter window or "
+            "wait for more data."
+        )
+        return
+
+    regimes = classify_loadings_series(loadings)
+    persistence = cosine_persistence(loadings)
+    info = current_regime_info(regimes, loadings, persistence)
+
+    # ---- Section 1: Current regime headline card -----------------------
+    if info:
+        spx_color = "#84cc16" if info["spx_load"] > 0 else "#f87171"
+        ust_color = "#84cc16" if info["ust_load"] > 0 else "#f87171"
+        dxy_color = "#84cc16" if info["dxy_load"] > 0 else "#f87171"
+        spx_str = f"+{info['spx_load']:.2f}" if info["spx_load"] >= 0 else f"{info['spx_load']:.2f}"
+        ust_str = f"+{info['ust_load']:.2f}" if info["ust_load"] >= 0 else f"{info['ust_load']:.2f}"
+        dxy_str = f"+{info['dxy_load']:.2f}" if info["dxy_load"] >= 0 else f"{info['dxy_load']:.2f}"
+
+        # Persistence interpretation
+        if info["persistence"] is None:
+            pers_str = "—"
+            pers_label = ""
+        else:
+            pers_str = f"{info['persistence']:+.3f}"
+            p = info["persistence"]
+            if p > 0.99:    pers_label = "very stable"
+            elif p > 0.95:  pers_label = "stable"
+            elif p > 0.85:  pers_label = "drifting"
+            elif p > 0.70:  pers_label = "rotating"
+            elif p > 0.0:   pers_label = "rotating fast"
+            else:           pers_label = "flipped"
+
+        st.markdown(
+            f"""
+            <div style="background:rgba(251,191,36,0.04);border:1px solid {info['color']};
+                        border-left:4px solid {info['color']};
+                        padding:0.85rem 1rem;margin-bottom:1rem;">
+              <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap;">
+                <div>
+                  <div style="font-size:10px;color:#888;letter-spacing:0.08em;
+                              text-transform:uppercase;">Now in regime</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:22px;
+                              font-weight:700;color:{info['color']};">{info['regime']}</div>
+                  <div style="font-size:11px;color:#bbb;">{info['label']}</div>
+                </div>
+                <div>
+                  <div style="font-size:10px;color:#888;letter-spacing:0.08em;
+                              text-transform:uppercase;">Days in regime</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:22px;
+                              font-weight:700;color:#fff;">{info['days_in']}</div>
+                  <div style="font-size:11px;color:#bbb;">since {info['since'].strftime('%Y-%m-%d')}</div>
+                </div>
+                <div>
+                  <div style="font-size:10px;color:#888;letter-spacing:0.08em;
+                              text-transform:uppercase;">Loadings</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600;">
+                    SPX <span style="color:{spx_color};">{spx_str}</span> ·
+                    10Y <span style="color:{ust_color};">{ust_str}</span> ·
+                    DXY <span style="color:{dxy_color};">{dxy_str}</span>
+                  </div>
+                  <div style="font-size:11px;color:#bbb;">PC1 explains
+                    <span style="color:#fff;font-weight:600;">{info['expvar']*100:.0f}%</span> of variance</div>
+                </div>
+                <div>
+                  <div style="font-size:10px;color:#888;letter-spacing:0.08em;
+                              text-transform:uppercase;">Persistence (1-day cosine)</div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:18px;
+                              font-weight:700;color:#fff;">{pers_str}</div>
+                  <div style="font-size:11px;color:#bbb;">{pers_label}</div>
+                </div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # ---- Section 2: Regime timeline stripe -----------------------------
+    st.markdown(
+        """
+        <div style="font-size:12px;font-weight:600;letter-spacing:0.06em;color:#fbbf24;
+                    margin:1.2rem 0 0.4rem 0;">
+          REGIME TIMELINE
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    runs = regime_runs(regimes)
+
+    # Build a Plotly heatmap-style stripe: one row, x-axis is date,
+    # cells colored by regime.
+    fig_stripe = go.Figure()
+    for _, run in runs.iterrows():
+        fig_stripe.add_trace(go.Bar(
+            x=[run["End"] - run["Start"] + pd.Timedelta(days=1)],
+            y=["Regime"],
+            base=[run["Start"]],
+            orientation='h',
+            marker=dict(color=BUCKET_COLOR[run["Regime"]],
+                        line=dict(color=BG, width=0.5)),
+            hovertemplate=(
+                f"<b>{run['Regime']}</b><br>"
+                f"{run['Start'].strftime('%Y-%m-%d')} → "
+                f"{run['End'].strftime('%Y-%m-%d')}<br>"
+                f"{run['Duration']} day(s)<extra></extra>"
+            ),
+            showlegend=False,
+        ))
+    fig_stripe.update_layout(
+        **{**DARK_LAYOUT,
+           "height": 90,
+           "barmode": "stack",
+           "showlegend": False,
+           "margin": dict(l=10, r=10, t=10, b=30),
+           "yaxis": dict(visible=False, fixedrange=True),
+           "xaxis": dict(
+               type="date",
+               showgrid=False,
+               tickfont=dict(size=10, color=TEXT_DIM),
+           ),
+        }
+    )
+    st.plotly_chart(fig_stripe, use_container_width=True,
+                    config={"displayModeBar": False})
+
+    # Color legend strip
+    legend_html = "<div style='display:flex;flex-wrap:wrap;gap:1rem;font-size:11px;color:#bbb;margin-bottom:1rem;'>"
+    bucket_counts = regimes.value_counts()
+    for b in BUCKET_ORDER:
+        if b not in bucket_counts.index:
+            continue
+        legend_html += (
+            f"<span style='display:flex;align-items:center;gap:5px;'>"
+            f"<span style='width:12px;height:12px;background:{BUCKET_COLOR[b]};"
+            f"border-radius:2px;display:inline-block;'></span>"
+            f"<code style='color:#ddd;'>{b}</code>"
+            f"<span style='color:#888;'>({bucket_counts[b]}d)</span>"
+            f"</span>"
+        )
+    legend_html += "</div>"
+    st.markdown(legend_html, unsafe_allow_html=True)
+
+    # ---- Section 3: Persistence tracker --------------------------------
+    st.markdown(
+        """
+        <div style="font-size:12px;font-weight:600;letter-spacing:0.06em;color:#fbbf24;
+                    margin:1.2rem 0 0.4rem 0;">
+          PERSISTENCE TRACKER (DAY-OVER-DAY COSINE SIMILARITY)
+        </div>
+        <div style="font-size:11px;color:#888;margin-bottom:0.6rem;">
+          How stable is the loading vector vs yesterday? +1.0 = unchanged,
+          0 = orthogonal rotation, −1.0 = full sign flip.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    fig_pers = go.Figure()
+    fig_pers.add_trace(go.Scatter(
+        x=persistence.index, y=persistence.values,
+        mode="lines",
+        line=dict(color="#06b6d4", width=1.2),
+        name="Persistence",
+        hovertemplate="%{x|%Y-%m-%d}<br>cos = %{y:.4f}<extra></extra>",
+    ))
+    # Reference bands
+    for y, label, color in [
+        (0.99,  "very stable (≥0.99)", "rgba(132,204,22,0.25)"),
+        (0.95,  "stable (≥0.95)",      "rgba(252,211,77,0.20)"),
+        (0.85,  "drifting (≥0.85)",    "rgba(251,146,60,0.18)"),
+    ]:
+        fig_pers.add_hline(y=y, line=dict(color=color, dash="dot", width=1),
+                           annotation_text=label, annotation_position="left",
+                           annotation_font=dict(color=TEXT_DIM, size=9))
+    fig_pers.add_hline(y=0, line=dict(color="rgba(248,113,113,0.3)", width=1, dash="dash"))
+
+    fig_pers.update_layout(
+        **{**DARK_LAYOUT, "height": 220, "showlegend": False,
+           "margin": dict(l=10, r=10, t=10, b=30),
+           "yaxis": dict(range=[-1.05, 1.05], gridcolor=GRID,
+                         tickfont=dict(size=10, color=TEXT_DIM),
+                         tickvals=[-1, -0.5, 0, 0.5, 1]),
+           "xaxis": dict(gridcolor=GRID,
+                         tickfont=dict(size=10, color=TEXT_DIM)),
+        }
+    )
+    st.plotly_chart(fig_pers, use_container_width=True,
+                    config={"displayModeBar": False})
+
+    # ---- Section 4: Regime stats table ---------------------------------
+    st.markdown(
+        """
+        <div style="font-size:12px;font-weight:600;letter-spacing:0.06em;color:#fbbf24;
+                    margin:1.2rem 0 0.4rem 0;">
+          REGIME STATISTICS
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    stats = regime_stats(regimes)
+    if stats.empty:
+        st.caption("No data to summarize.")
+        return
+
+    # Format for display
+    def _fmt_stats_row(row):
+        active_dot = "<span style='color:#84cc16;'>●</span>" if row["Active"] else ""
+        return (
+            f"<tr>"
+            f"<td style='padding:6px 10px;'><span style='display:inline-block;width:10px;"
+            f"height:10px;background:{BUCKET_COLOR[row['Regime']]};border-radius:2px;"
+            f"margin-right:8px;'></span>"
+            f"<code style='color:#fff;font-weight:600;'>{row['Regime']}</code> "
+            f"{active_dot}</td>"
+            f"<td style='padding:6px 10px;font-family:JetBrains Mono;text-align:right;'>{row['Days']}</td>"
+            f"<td style='padding:6px 10px;font-family:JetBrains Mono;text-align:right;'>{row['Pct']:.1f}%</td>"
+            f"<td style='padding:6px 10px;font-family:JetBrains Mono;text-align:right;'>{row['Runs']}</td>"
+            f"<td style='padding:6px 10px;font-family:JetBrains Mono;text-align:right;'>{row['AvgRun']:.1f}</td>"
+            f"<td style='padding:6px 10px;font-family:JetBrains Mono;text-align:right;'>{row['MaxRun']}</td>"
+            f"<td style='padding:6px 10px;font-family:JetBrains Mono;color:#bbb;'>{row['LastEntry'].strftime('%Y-%m-%d')}</td>"
+            f"</tr>"
+        )
+
+    table_rows = "".join(_fmt_stats_row(r) for _, r in stats.iterrows())
+    st.markdown(
+        f"""
+        <table style='width:100%;border-collapse:collapse;font-size:12px;color:#ccc;
+                      border:1px solid #1a1a1a;'>
+          <thead>
+            <tr style='background:#0f0f0f;border-bottom:1px solid #2a2a2a;'>
+              <th style='padding:8px 10px;text-align:left;font-weight:600;color:#fbbf24;
+                         letter-spacing:0.04em;'>REGIME</th>
+              <th style='padding:8px 10px;text-align:right;font-weight:600;color:#fbbf24;
+                         letter-spacing:0.04em;'>DAYS</th>
+              <th style='padding:8px 10px;text-align:right;font-weight:600;color:#fbbf24;
+                         letter-spacing:0.04em;'>%</th>
+              <th style='padding:8px 10px;text-align:right;font-weight:600;color:#fbbf24;
+                         letter-spacing:0.04em;'>RUNS</th>
+              <th style='padding:8px 10px;text-align:right;font-weight:600;color:#fbbf24;
+                         letter-spacing:0.04em;'>AVG RUN</th>
+              <th style='padding:8px 10px;text-align:right;font-weight:600;color:#fbbf24;
+                         letter-spacing:0.04em;'>MAX RUN</th>
+              <th style='padding:8px 10px;text-align:left;font-weight:600;color:#fbbf24;
+                         letter-spacing:0.04em;'>LAST ENTRY</th>
+            </tr>
+          </thead>
+          <tbody>
+            {table_rows}
+          </tbody>
+        </table>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.caption(
+        f"Active = currently in this regime (green dot). · "
+        f"Pct = % of {len(regimes)} classified days. · "
+        f"Avg/Max Run = mean/longest consecutive days in this regime. · "
+        f"Regime engine: {__REGIME_VERSION__}"
     )
 
 
