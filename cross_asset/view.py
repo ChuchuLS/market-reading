@@ -209,19 +209,75 @@ def render_cross_asset():
         """,
         unsafe_allow_html=True,
     )
-    cc1, cc2, cc3, cc4 = st.columns([2, 2, 2, 1])
-    with cc1:
+    # ----- Quick presets — one-click param sets that work well together
+    pc1, pc2, pc3, pc4 = st.columns([1, 1, 1, 4])
+    with pc1:
+        if st.button("⚡ Standard", use_container_width=True, key="ca_preset_std",
+                     help="Honest about regime changes. Window=20, no smoothing, "
+                          "per-day SPX-positive anchor."):
+            st.session_state["ca_window"] = 20
+            st.session_state["ca_scaling"] = "zscore"
+            st.session_state["ca_weighting"] = "equal"
+            st.session_state["ca_pca_method"] = "standard"
+            st.session_state["ca_presmooth"] = 0
+            st.rerun()
+    with pc2:
+        if st.button("〜 Smooth", use_container_width=True, key="ca_preset_smooth",
+                     help="Smooth trending curves. Window=90, halflife=15 "
+                          "pre-smoothing, Procrustes sign alignment."):
+            st.session_state["ca_window"] = 90
+            st.session_state["ca_scaling"] = "zscore"
+            st.session_state["ca_weighting"] = "equal"
+            st.session_state["ca_pca_method"] = "procrustes"
+            st.session_state["ca_presmooth"] = 15
+            st.rerun()
+    with pc3:
+        if st.button("≈ Very Smooth", use_container_width=True, key="ca_preset_vsmooth",
+                     help="Maximum smoothness. Window=120, halflife=20 "
+                          "pre-smoothing, Procrustes."):
+            st.session_state["ca_window"] = 120
+            st.session_state["ca_scaling"] = "zscore"
+            st.session_state["ca_weighting"] = "ewm"
+            st.session_state["ca_pca_method"] = "procrustes"
+            st.session_state["ca_presmooth"] = 20
+            st.rerun()
+
+    # Row 1: Window + Pre-smooth halflife + Refresh
+    r1c1, r1c2, r1c3 = st.columns([3, 2, 1])
+    with r1c1:
         window = st.select_slider(
             "Rolling window (trading days)",
-            options=[10, 15, 20, 25, 30, 42, 60, 90, 126, 252],
-            value=20,
+            options=[10, 15, 20, 25, 30, 42, 60, 90, 120, 150, 180, 252],
+            value=st.session_state.get("ca_window", 20),
             key="ca_window",
         )
-    with cc2:
+    with r1c2:
+        presmooth_halflife = st.select_slider(
+            "Pre-smooth halflife (days)",
+            options=[0, 3, 5, 10, 15, 20, 30],
+            value=st.session_state.get("ca_presmooth", 0),
+            key="ca_presmooth",
+            help=(
+                "EWMA filter applied to daily returns BEFORE rolling PCA. "
+                "0 = off. Higher values = smoother but more lag. "
+                "15-20 produces the trending curves seen in many published "
+                "cross-asset PCA dashboards."
+            ),
+        )
+    with r1c3:
+        st.markdown("<div style='font-size:10px;color:transparent;'>spacer</div>",
+                    unsafe_allow_html=True)
+        if st.button("↻ Refresh data", use_container_width=True, key="ca_refresh"):
+            st.cache_data.clear()
+            st.rerun()
+
+    # Row 2: 3 method radios
+    r2c1, r2c2, r2c3 = st.columns(3)
+    with r2c1:
         scaling = st.radio(
             "Return scaling",
             options=["zscore", "volscale"],
-            index=0,
+            index=["zscore", "volscale"].index(st.session_state.get("ca_scaling", "zscore")),
             format_func=lambda x: {
                 "zscore":   "Z-score (within window)",
                 "volscale": "Vol-scale (trailing-vol divisor)",
@@ -234,27 +290,59 @@ def render_cross_asset():
                 "cross-window magnitude comparability."
             ),
         )
-    with cc3:
+    with r2c2:
         weighting = st.radio(
             "Window weighting",
             options=["equal", "ewm"],
-            index=0,
+            index=["equal", "ewm"].index(st.session_state.get("ca_weighting", "equal")),
             format_func=lambda x: {
                 "equal": "Equal",
-                "ewm":   f"Exponential (halflife=W/3)",
+                "ewm":   "Exponential (halflife=W/3)",
             }[x],
             key="ca_weighting",
             horizontal=True,
             help=(
-                "Equal = standard rolling. EWM = exponential decay so recent days carry more weight."
+                "Equal = standard rolling. EWM = exponential decay so recent days "
+                "carry more weight."
             ),
         )
-    with cc4:
-        st.markdown("<div style='font-size:10px;color:transparent;'>spacer</div>",
-                    unsafe_allow_html=True)
-        if st.button("↻ Refresh data", use_container_width=True, key="ca_refresh"):
-            st.cache_data.clear()
-            st.rerun()
+    with r2c3:
+        pca_method = st.radio(
+            "Sign convention",
+            options=["standard", "procrustes"],
+            index=["standard", "procrustes"].index(st.session_state.get("ca_pca_method", "standard")),
+            format_func=lambda x: {
+                "standard":   "Standard (per-day SPX+)",
+                "procrustes": "Procrustes (continuous)",
+            }[x],
+            key="ca_pca_method",
+            horizontal=True,
+            help=(
+                "Standard: anchor SPX positive each day independently. Honest about "
+                "regime changes; can show sign jitter when SPX_load crosses zero. "
+                "Procrustes: rotate each day's PC1 to align with the previous day's "
+                "PC1. Smooth curves; may obscure real regime changes."
+            ),
+        )
+
+    # Build a one-line summary of current settings so user can always verify
+    # what methodology produced the numbers shown on the page
+    smoothing_str = f"halflife={presmooth_halflife}d" if presmooth_halflife > 0 else "off"
+    settings_str = (
+        f"window={window}d · scaling={scaling} · weighting={weighting} · "
+        f"sign={pca_method} · pre-smooth={smoothing_str} · filter=strict"
+    )
+    st.markdown(
+        f"""
+        <div style="background:#0f0f0f;border:1px solid #2a2a2a;border-left:3px solid #fbbf24;
+                    padding:0.5rem 0.75rem;margin:0.5rem 0;font-family:'JetBrains Mono',monospace;
+                    font-size:11px;color:#ccc;">
+          <span style="color:#fbbf24;font-weight:600;">CURRENT SETTINGS:</span>
+          {settings_str}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.caption(
         f"📁 {DATA_PATH.name} · 🕐 {last_updated} · "
@@ -264,6 +352,25 @@ def render_cross_asset():
 
     # Compute returns according to chosen method
     returns = compute_returns(prices, vol_scale=(scaling == "volscale"))
+
+    # Strict filter: drop days where any of the three returns is exactly 0.
+    # A zero log-return / zero yield-diff means today's price equals yesterday's,
+    # which on a US trading day usually means the BQL pull captured stale data
+    # for that asset (US holidays where one market closed, or intraday-pulled
+    # data that hadn't updated yet). Including these rows mixes stale-data
+    # zeros into the rolling correlation, biasing values toward zero.
+    # Removing them brings the math in line with Bloomberg's CORREL function.
+    n_before = len(returns)
+    returns = returns[(returns["SPX"] != 0) & (returns["USGG10YR"] != 0) & (returns["DXY"] != 0)]
+    n_dropped = n_before - len(returns)
+
+    if n_dropped > 0:
+        st.caption(
+            f"⚠ Strict filter dropped {n_dropped} stale-data rows "
+            f"(days where at least one of SPX/UST10Y/DXY had zero return — "
+            f"typically US holidays or intraday-pulled data). "
+            f"{len(returns)} valid trading days used for correlation/PCA."
+        )
 
     st.markdown("---")
 
@@ -276,7 +383,7 @@ def render_cross_asset():
         _render_correlations_panel(returns, window, weighting)
 
     with col_right:
-        _render_dominant_theme_panel(returns, window, weighting)
+        _render_dominant_theme_panel(returns, window, weighting, pca_method, presmooth_halflife)
 
 
 # ---------------------------------------------------------------------------
@@ -374,7 +481,9 @@ def _render_correlations_panel(returns: pd.DataFrame, window: int, weighting: st
 # ---------------------------------------------------------------------------
 # Panel 2: Dominant theme (PCA)
 # ---------------------------------------------------------------------------
-def _render_dominant_theme_panel(returns: pd.DataFrame, window: int, weighting: str):
+def _render_dominant_theme_panel(returns: pd.DataFrame, window: int,
+                                 weighting: str, pca_method: str = "standard",
+                                 presmooth_halflife: int = 0):
     st.markdown(
         """
         <div style="font-size:14px;font-weight:700;letter-spacing:0.06em;color:#fbbf24;
@@ -463,7 +572,9 @@ def _render_dominant_theme_panel(returns: pd.DataFrame, window: int, weighting: 
             )
 
     # ---- Rolling loadings chart ----
-    roll = rolling_pca_loadings(returns, window=window, weighting=weighting)
+    roll = rolling_pca_loadings(returns, window=window, weighting=weighting,
+                                pca_method=pca_method,
+                                presmooth_halflife=presmooth_halflife)
 
     # Low-confidence mask: when PC1 is not really dominant
     # (eigenvalue gap is small OR explained variance is low)
