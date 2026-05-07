@@ -26,9 +26,10 @@ from cross_asset.analytics import (
 )
 from cross_asset.regime import (
     classify_loadings_series, cosine_persistence,
+    soft_scores, apply_persistence_filter, transitions_log,
     regime_runs, regime_stats, current_regime_info,
     BUCKET_ORDER, BUCKET_DISPLAY, BUCKET_COLOR,
-    LOADING_MAGNITUDE_THRESHOLD, EXP_VAR_THRESHOLD,
+    LOADING_MAGNITUDE_THRESHOLD, EXP_VAR_THRESHOLD, PERSISTENCE_THRESHOLD,
     __REGIME_VERSION__,
 )
 
@@ -736,13 +737,17 @@ def _render_regime_panel(returns: pd.DataFrame):
           interpretation imposed — the bucket name is just the sign triple
           (e.g. <code>+−−</code> means SPX positive, UST10Y negative, DXY negative).
           <br>
-          A day is classified as <span style="color:#aaa;font-weight:600;">Mixed</span> when
+          A day is labeled <span style="color:#aaa;font-weight:600;">Mixed</span> when
           the dominant theme is unreliable: PC1 explained variance below
           <strong>{var:.0%}</strong>, or any loading magnitude below
-          <strong>{mag:.2f}</strong>. Strict thresholds keep "Mixed" honest as
-          "no clear signal" rather than forcing labels onto noise.
+          <strong>{mag:.2f}</strong>.
+          A day is labeled <span style="color:#f97316;font-weight:600;">Transitioning</span>
+          when day-over-day persistence drops below <strong>{pers:.2f}</strong>
+          (high rotation), regardless of sign pattern.
+          Soft scores show how close the loadings are to each archetype regime.
         </div>
-        """.format(var=EXP_VAR_THRESHOLD, mag=LOADING_MAGNITUDE_THRESHOLD),
+        """.format(var=EXP_VAR_THRESHOLD, mag=LOADING_MAGNITUDE_THRESHOLD,
+                   pers=PERSISTENCE_THRESHOLD),
         unsafe_allow_html=True,
     )
 
@@ -775,8 +780,12 @@ def _render_regime_panel(returns: pd.DataFrame):
         )
         return
 
-    regimes = classify_loadings_series(loadings)
+    # ---- Hard classification + persistence + soft scoring + filtered regimes ----
+    raw_regimes = classify_loadings_series(loadings)
     persistence = cosine_persistence(loadings)
+    scores = soft_scores(loadings)
+    # Apply persistence filter: relabel high-rotation days as "Transitioning"
+    regimes = apply_persistence_filter(raw_regimes, persistence)
     info = current_regime_info(regimes, loadings, persistence)
 
     # ---- Section 1: Current regime headline card -----------------------
@@ -845,6 +854,48 @@ def _render_regime_panel(returns: pd.DataFrame):
             """,
             unsafe_allow_html=True,
         )
+
+    # ---- Section 1b: Soft archetype scores (top-3 closest sign-triples) ----
+    if not scores.empty and len(scores) > 0:
+        latest_scores = scores.iloc[-1].sort_values(ascending=False)
+        # Show top 3 archetypes for the latest day
+        top3 = latest_scores.head(3)
+        st.markdown(
+            """
+            <div style="font-size:12px;font-weight:600;letter-spacing:0.06em;color:#fbbf24;
+                        margin:1.2rem 0 0.4rem 0;">
+              ARCHETYPE SIMILARITY (TOP 3)
+            </div>
+            <div style="font-size:11px;color:#888;margin-bottom:0.6rem;">
+              Cosine similarity of today's loading vector against each
+              archetype sign-triple. +1.0 = perfect match, 0 = orthogonal,
+              −1.0 = perfect opposite. The top match is the natural
+              hard-bucket assignment (subject to thresholds).
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # Build mini bars with colored fill proportional to similarity
+        bar_html = "<div style='display:flex;flex-direction:column;gap:6px;margin-bottom:1rem;'>"
+        for triple, sim in top3.items():
+            color = BUCKET_COLOR.get(triple, "#525252")
+            # Bar width: similarity ranges -1 to +1, but display 0-100% width.
+            # For positive similarity, bar goes right; negative would go left.
+            width_pct = max(0, min(100, sim * 100))
+            sim_str = f"{sim:+.3f}"
+            bar_html += (
+                f"<div style='display:flex;align-items:center;gap:10px;'>"
+                f"<code style='display:inline-block;width:50px;color:{color};font-weight:600;'>{triple}</code>"
+                f"<div style='flex:1;background:#0f0f0f;border:1px solid #1a1a1a;height:18px;"
+                f"position:relative;overflow:hidden;'>"
+                f"<div style='background:{color};width:{width_pct}%;height:100%;opacity:0.8;'></div>"
+                f"</div>"
+                f"<code style='display:inline-block;width:60px;text-align:right;color:#ccc;font-size:11px;'>{sim_str}</code>"
+                f"</div>"
+            )
+        bar_html += "</div>"
+        st.markdown(bar_html, unsafe_allow_html=True)
 
     # ---- Section 2: Regime timeline stripe -----------------------------
     st.markdown(
@@ -959,7 +1010,89 @@ def _render_regime_panel(returns: pd.DataFrame):
     st.plotly_chart(fig_pers, use_container_width=True,
                     config={"displayModeBar": False})
 
-    # ---- Section 4: Regime stats table ---------------------------------
+    # ---- Section 4: Recent transitions log -----------------------------
+    st.markdown(
+        """
+        <div style="font-size:12px;font-weight:600;letter-spacing:0.06em;color:#fbbf24;
+                    margin:1.2rem 0 0.4rem 0;">
+          RECENT TRANSITIONS
+        </div>
+        <div style="font-size:11px;color:#888;margin-bottom:0.6rem;">
+          Last 20 regime changes, newest first. Persistence column shows the
+          minimum cosine over the 5-day window ending at the transition —
+          captures rotation magnitude even if the transition day itself
+          looks stable.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    trans = transitions_log(regimes, persistence, last_n=20)
+    if trans.empty:
+        st.caption("No transitions in this period.")
+    else:
+        def _fmt_trans_row(row):
+            from_color = BUCKET_COLOR.get(row["From"], "#525252")
+            to_color = BUCKET_COLOR.get(row["To"], "#525252")
+            pers_str = f"{row['Persistence']:+.3f}" if row["Persistence"] is not None else "—"
+            # Color the persistence: red if a real rotation happened
+            if row["Persistence"] is not None:
+                p = row["Persistence"]
+                if p < 0.0:    pers_color = "#dc2626"  # full flip
+                elif p < 0.5:  pers_color = "#ef4444"  # major rotation
+                elif p < 0.85: pers_color = "#f97316"  # transition zone
+                else:          pers_color = "#84cc16"  # mild
+            else:
+                pers_color = "#888"
+            return (
+                f"<tr>"
+                f"<td style='padding:5px 10px;font-family:JetBrains Mono;color:#bbb;'>"
+                f"{row['Date'].strftime('%Y-%m-%d')}</td>"
+                f"<td style='padding:5px 10px;'>"
+                f"<span style='display:inline-block;width:8px;height:8px;background:{from_color};"
+                f"border-radius:2px;margin-right:6px;'></span>"
+                f"<code style='color:#ddd;'>{row['From']}</code></td>"
+                f"<td style='padding:5px 10px;color:#666;text-align:center;'>→</td>"
+                f"<td style='padding:5px 10px;'>"
+                f"<span style='display:inline-block;width:8px;height:8px;background:{to_color};"
+                f"border-radius:2px;margin-right:6px;'></span>"
+                f"<code style='color:#fff;font-weight:600;'>{row['To']}</code></td>"
+                f"<td style='padding:5px 10px;font-family:JetBrains Mono;text-align:right;color:{pers_color};'>"
+                f"{pers_str}</td>"
+                f"<td style='padding:5px 10px;font-family:JetBrains Mono;text-align:right;color:#bbb;'>"
+                f"{row['DurationFrom']}d</td>"
+                f"</tr>"
+            )
+
+        trans_rows = "".join(_fmt_trans_row(r) for _, r in trans.iterrows())
+        st.markdown(
+            f"""
+            <table style='width:100%;border-collapse:collapse;font-size:11px;color:#ccc;
+                          border:1px solid #1a1a1a;'>
+              <thead>
+                <tr style='background:#0f0f0f;border-bottom:1px solid #2a2a2a;'>
+                  <th style='padding:7px 10px;text-align:left;font-weight:600;color:#fbbf24;
+                             letter-spacing:0.04em;'>DATE</th>
+                  <th style='padding:7px 10px;text-align:left;font-weight:600;color:#fbbf24;
+                             letter-spacing:0.04em;'>FROM</th>
+                  <th style='padding:7px 10px;'></th>
+                  <th style='padding:7px 10px;text-align:left;font-weight:600;color:#fbbf24;
+                             letter-spacing:0.04em;'>TO</th>
+                  <th style='padding:7px 10px;text-align:right;font-weight:600;color:#fbbf24;
+                             letter-spacing:0.04em;'>MIN PERS</th>
+                  <th style='padding:7px 10px;text-align:right;font-weight:600;color:#fbbf24;
+                             letter-spacing:0.04em;'>FROM HELD</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trans_rows}
+              </tbody>
+            </table>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # ---- Section 5: Regime stats table ---------------------------------
     st.markdown(
         """
         <div style="font-size:12px;font-weight:600;letter-spacing:0.06em;color:#fbbf24;
