@@ -782,6 +782,8 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
         fig_cov = go.Figure()
 
         # Gray bands for low-confidence covariance days
+        # Use the SAME color as the correlation chart's gray bands so the two
+        # charts look visually identical wherever they share masked days.
         if cov_low_conf.any():
             in_band = False
             band_start = None
@@ -790,12 +792,12 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
                     band_start = date; in_band = True
                 elif not is_low and in_band:
                     fig_cov.add_vrect(x0=band_start, x1=date,
-                                      fillcolor="rgba(80,80,80,0.18)",
+                                      fillcolor="rgba(120,120,120,0.12)",
                                       layer="below", line_width=0)
                     in_band = False
             if in_band:
                 fig_cov.add_vrect(x0=band_start, x1=roll_cov.index[-1],
-                                  fillcolor="rgba(80,80,80,0.18)",
+                                  fillcolor="rgba(120,120,120,0.12)",
                                   layer="below", line_width=0)
 
         fig_cov.add_trace(go.Scatter(
