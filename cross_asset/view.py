@@ -18,9 +18,9 @@ import streamlit as st
 
 from theming import BG, GRID, TEXT, TEXT_DIM, DARK_LAYOUT
 from cross_asset.analytics import (
-    compute_returns, compute_level_scaled,
+    compute_returns,
     rolling_pairwise_corrs, latest_pairwise_corrs,
-    pca_dominant_theme, rolling_pca_loadings, rolling_pca_loadings_level_scaled,
+    pca_dominant_theme, rolling_pca_loadings,
     correlation_story, loading_label,
     __ANALYTICS_VERSION__,
 )
@@ -311,11 +311,6 @@ def render_cross_asset():
     # Compute returns according to chosen method
     returns = compute_returns(prices, vol_scale=(scaling == "volscale"))
 
-    # Level-scaled macro state — used by the level-scaled covariance PCA
-    # chart in the Dominant Theme panel. Operates on prices directly,
-    # independent of the returns scaling choice.
-    level_scaled = compute_level_scaled(prices, lookback=500, smooth_halflife=20)
-
     # Strict filter: drop days where any of the three returns is exactly 0.
     # A zero log-return / zero yield-diff means today's price equals yesterday's,
     # which on a US trading day usually means the BQL pull captured stale data
@@ -352,7 +347,7 @@ def render_cross_asset():
             _render_correlations_panel(returns)
 
         with col_right:
-            _render_dominant_theme_panel(returns, level_scaled)
+            _render_dominant_theme_panel(returns)
 
     with tab_regime:
         _render_regime_panel(returns)
@@ -473,7 +468,7 @@ def _render_correlations_panel(returns: pd.DataFrame):
 # ---------------------------------------------------------------------------
 # Panel 2: Dominant theme (PCA)
 # ---------------------------------------------------------------------------
-def _render_dominant_theme_panel(returns: pd.DataFrame, level_scaled: pd.DataFrame):
+def _render_dominant_theme_panel(returns: pd.DataFrame):
     st.markdown(
         """
         <div style="font-size:14px;font-weight:700;letter-spacing:0.06em;color:#fbbf24;
@@ -718,116 +713,6 @@ def _render_dominant_theme_panel(returns: pd.DataFrame, level_scaled: pd.DataFra
         f"Gray bands = periods where the dominant theme is weak (loadings unreliable)."
     )
 
-    # ----- COVARIANCE PCA CHART (below correlation) -----
-    # Uses LEVEL-SCALED inputs (rolling z-scores of log-prices and yield levels,
-    # then EWMA-smoothed) instead of daily returns. Captures slow regime
-    # evolution: which macro state variable contributes most to the dominant
-    # factor over the rolling window.
-    st.markdown(
-        """
-        <div style="font-size:13px;font-weight:600;letter-spacing:0.06em;color:#fbbf24;
-                    margin:1.5rem 0 0.4rem 0;">
-          DOMINANT THEME · COVARIANCE PCA (LEVEL-SCALED)
-        </div>
-        <div style="background:rgba(251,191,36,0.04);border:1px solid rgba(251,191,36,0.2);
-                    padding:0.65rem 1rem;font-size:11px;color:#ccc;line-height:1.5;
-                    margin-bottom:0.8rem;">
-          This version uses <b>covariance PCA</b> on <b>level-scaled</b> inputs:
-          log SPX, 10Y yield level, and log DXY — each rolling z-scored over a
-          ~2-year window, then smoothed with halflife=20 days. Loadings reflect
-          which macro state variable is contributing most to the slow regime
-          factor. Different from the chart above (which uses daily returns) —
-          this one tracks regime evolution rather than day-to-day co-movement.
-          Window=120, sign=Procrustes (hardcoded for this analysis).
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    roll_cov = rolling_pca_loadings_level_scaled(
-        level_scaled,
-        window=120,
-        weighting="equal",
-        pca_method="procrustes",
-    )
-
-    if roll_cov.empty or len(roll_cov) < 5:
-        st.caption(
-            "Not enough data for level-scaled covariance PCA. The level-scaling "
-            "step requires at least 500 days of price history."
-        )
-    else:
-        # Use the SAME gray-band mask as the correlation chart above so the two
-        # charts are visually comparable on the date axis. Reindex the
-        # correlation mask onto the level-scaled chart's dates.
-        cov_low_conf = low_conf_mask.reindex(roll_cov.index, fill_value=False)
-
-        fig_cov = go.Figure()
-
-        # Gray bands for low-confidence covariance days
-        # Use the SAME color as the correlation chart's gray bands so the two
-        # charts look visually identical wherever they share masked days.
-        if cov_low_conf.any():
-            in_band = False
-            band_start = None
-            for date, is_low in zip(roll_cov.index, cov_low_conf):
-                if is_low and not in_band:
-                    band_start = date; in_band = True
-                elif not is_low and in_band:
-                    fig_cov.add_vrect(x0=band_start, x1=date,
-                                      fillcolor="rgba(120,120,120,0.12)",
-                                      layer="below", line_width=0)
-                    in_band = False
-            if in_band:
-                fig_cov.add_vrect(x0=band_start, x1=roll_cov.index[-1],
-                                  fillcolor="rgba(120,120,120,0.12)",
-                                  layer="below", line_width=0)
-
-        fig_cov.add_trace(go.Scatter(
-            x=roll_cov.index, y=roll_cov["SPX_load"], mode="lines",
-            name="SPX weight",
-            line=dict(color=COLOR_SPX, width=1.4),
-            hovertemplate="<b>SPX</b><br>%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
-        ))
-        fig_cov.add_trace(go.Scatter(
-            x=roll_cov.index, y=roll_cov["USGG10YR_load"], mode="lines",
-            name="UST 10Y weight",
-            line=dict(color=COLOR_UST10Y, width=1.4),
-            hovertemplate="<b>UST 10Y</b><br>%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
-        ))
-        fig_cov.add_trace(go.Scatter(
-            x=roll_cov.index, y=roll_cov["DXY_load"], mode="lines",
-            name="DXY weight",
-            line=dict(color=COLOR_DXY, width=1.4),
-            hovertemplate="<b>DXY</b><br>%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
-        ))
-
-        fig_cov.update_layout(
-            **{**DARK_LAYOUT, "height": 280, "showlegend": True,
-               "legend": dict(orientation="h", yanchor="top", y=-0.15,
-                              xanchor="left", x=0,
-                              font=dict(size=10, color=TEXT_DIM)),
-               "yaxis": dict(range=[-1.05, 1.05], gridcolor=GRID, zeroline=False,
-                             tickfont=dict(size=9, color=TEXT_DIM),
-                             tickvals=[-1, -0.5, 0, 0.5, 1]),
-               "xaxis": dict(showgrid=True, gridcolor=GRID, zeroline=False,
-                             tickfont=dict(size=9, color=TEXT_DIM)),
-               "margin": dict(l=40, r=20, t=10, b=80),
-            }
-        )
-        st.plotly_chart(fig_cov, use_container_width=True,
-                        config={"displayModeBar": False})
-
-        # Show latest level-scaled covariance loadings
-        latest_cov = roll_cov.iloc[-1]
-        st.caption(
-            f"Latest level-scaled cov-PCA loadings: SPX {latest_cov['SPX_load']:+.2f} · "
-            f"UST10Y {latest_cov['USGG10YR_load']:+.2f} · "
-            f"DXY {latest_cov['DXY_load']:+.2f} · "
-            f"PC1 explains {latest_cov['ExplainedVar']*100:.0f}% of level-scaled variance · "
-            f"This chart is NOT directly comparable to the chart above — it operates "
-            f"on macro-state levels, not daily returns."
-        )
 
 
 # ---------------------------------------------------------------------------
