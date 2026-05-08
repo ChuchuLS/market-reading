@@ -471,54 +471,39 @@ def _render_correlations_panel(returns: pd.DataFrame):
 def _render_dominant_theme_panel(returns: pd.DataFrame):
     st.markdown(
         """
-        <div style="font-size:14px;font-weight:700;letter-spacing:0.06em;color:#fbbf24;
-                    margin-bottom:0.4rem;">
-          DOMINANT MARKET THEME
-        </div>
-        <div style="background:rgba(251,191,36,0.04);border:1px solid rgba(251,191,36,0.2);
-                    padding:0.75rem 1rem;font-size:11px;color:#ccc;line-height:1.6;
-                    margin-bottom:1rem;">
-          <span style="color:#fbbf24;font-weight:600;">What this shows:</span>
-          When all 3 assets move together, there's a common
-          <span style="font-weight:600;color:#fff;">"theme"</span> driving them
-          (like risk-on/risk-off, or a Fed reaction). The
-          <span style="font-weight:600;color:#fff;">loadings</span> show how much each asset
-          participates in that theme. A loading of 0.6 means that asset is
-          heavily involved; 0.2 means it's barely participating. If two assets have
-          the <span style="font-weight:600;color:#fff;">same sign</span>
-          (both positive or both negative), they're moving in the same direction within
-          the theme. <span style="font-weight:600;color:#fff;">Opposite signs</span> mean
-          they're moving against each other.
+        <div class="ca-card-title">DOMINANT MARKET THEME</div>
+        <div class="ca-card-desc">
+        What this shows: When all 3 assets move together, there's a common "theme" driving them
+        (like risk-on/risk-off, or a Fed reaction). The loadings show how much each asset participates
+        in that theme. A loading of 0.6 means that asset is heavily involved; 0.2 means it's barely
+        participating. If two assets have the same sign, they're moving in the same direction within
+        the theme. Opposite signs mean they're moving against each other.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # ---- Panel-local controls (independent of the Pairwise panel) ----
     pc1, pc2 = st.columns([3, 2])
     with pc1:
         window = st.slider(
             "Window (trading days)",
-            min_value=5, max_value=252, step=1,
+            min_value=5,
+            max_value=252,
+            step=1,
             value=st.session_state.get("pca_window", 20),
             key="pca_window",
-            help=(
-                "Rolling window for PCA decomposition. Longer windows give "
-                "smoother loading curves but lag regime changes."
-            ),
+            help="Rolling window for PCA decomposition. Longer windows give smoother loading curves but lag regime changes.",
         )
+
     with pc2:
         presmooth_halflife = st.select_slider(
             "Pre-smooth halflife",
             options=[0, 3, 5, 10, 15, 20, 30],
             value=st.session_state.get("pca_presmooth", 0),
             key="pca_presmooth",
-            help=(
-                "EWMA filter on returns BEFORE PCA. 0=off. Higher=smoother but "
-                "more lag. 15-20 produces trending curves seen in published "
-                "cross-asset PCA dashboards."
-            ),
+            help="EWMA filter on returns BEFORE PCA. 0=off. Higher=smoother but more lag.",
         )
+
     pc3, pc4 = st.columns(2)
     with pc3:
         weighting = st.radio(
@@ -529,6 +514,7 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
             key="pca_weighting",
             horizontal=True,
         )
+
     with pc4:
         pca_method = st.radio(
             "Sign convention",
@@ -538,175 +524,161 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
             key="pca_method",
             horizontal=True,
             help=(
-                "Per-day SPX+: anchor SPX positive each day. Honest about regime "
-                "changes, can show sign jitter. Procrustes: align with previous "
-                "day's PC1. Smooth curves, may obscure regime changes."
+                "Per-day SPX+: anchor SPX positive each day. "
+                "Procrustes: align with previous day's PC1 for smoother curves."
             ),
         )
 
-    # pca = pca_dominant_theme(returns, window=window, weighting=weighting)
-    # explained = pca["explained_variance"]
-    # loadings = pca["loadings"]
-
+    # Single source of truth:
+    # headline, latest weights, and chart all use the exact same rolling PCA settings.
     roll = rolling_pca_loadings(
-    returns,
-    window=window,
-    weighting=weighting,
-    pca_method=pca_method,
-    presmooth_halflife=presmooth_halflife,
-)
+        returns,
+        window=window,
+        weighting=weighting,
+        pca_method=pca_method,
+        presmooth_halflife=presmooth_halflife,
+    )
 
-if roll.empty:
-    st.warning("Not enough data to compute PCA. Try a shorter window.")
-    return
+    if roll.empty:
+        st.warning("Not enough data to compute PCA. Try a shorter window.")
+        return
 
-latest = roll.iloc[-1]
-explained = float(latest["ExplainedVar"])
-loadings = {
-    "SPX": float(latest["SPX_load"]),
-    "USGG10YR": float(latest["USGG10YR_load"]),
-    "DXY": float(latest["DXY_load"]),
-}
+    latest = roll.iloc[-1]
+    explained = float(latest["ExplainedVar"])
 
-    # Mixed vs aligned interpretation
+    loadings = {
+        "SPX": float(latest["SPX_load"]),
+        "USGG10YR": float(latest["USGG10YR_load"]),
+        "DXY": float(latest["DXY_load"]),
+    }
+
     signs = {a: ("pos" if v > 0 else "neg") for a, v in loadings.items()}
     same_sign = len(set(signs.values())) == 1
 
-    # Headline interpretation — only call out a "dominant" asset when one loading
-    # meaningfully exceeds the others (gap >= 0.10). When all three are similar,
-    # PCA is saying they're equally participating, not that one is leading.
-    label_map = {"SPX": "SPX", "USGG10YR": "UST 10Y", "DXY": "DXY"}
+    label_map = {
+        "SPX": "SPX",
+        "USGG10YR": "UST 10Y",
+        "DXY": "DXY",
+    }
+
     sorted_by_mag = sorted(loadings.items(), key=lambda kv: abs(kv[1]), reverse=True)
     largest_asset, largest_load = sorted_by_mag[0]
     second_load = sorted_by_mag[1][1]
+
     dominance_gap = abs(largest_load) - abs(second_load)
     DOMINANCE_THRESHOLD = 0.10
 
     if dominance_gap >= DOMINANCE_THRESHOLD:
-        weight_note = (
-            f'<b style="color:#fff;">{label_map[largest_asset]}</b> has the largest '
-            f'weight in this theme.'
-        )
+        weight_note = f"{label_map[largest_asset]} has the largest weight in this theme."
     else:
-        weight_note = (
-            'All three assets are participating with similar weight — no single '
-            'asset dominates the theme.'
-        )
+        weight_note = "All three assets are participating with similar weight — no single asset dominates the theme."
 
     if same_sign:
         direction_note = "All three are moving in the same direction within the theme."
     else:
-        direction_note = (
-            "The assets have mixed directions — some are moving with and some "
-            "against the common theme."
-        )
+        direction_note = "The assets have mixed directions — some are moving with and some against the common theme."
 
     st.markdown(
         f"""
-        <div style="background:rgba(251,191,36,0.04);border:1px solid rgba(251,191,36,0.2);
-                    padding:0.75rem 1rem;font-size:11px;color:#ccc;line-height:1.6;
-                    margin-bottom:1rem;">
-          <span style="color:#fbbf24;font-weight:600;">RIGHT NOW:</span>
-          The dominant theme explains
-          <b style="color:#fff;">{explained*100:.0f}%</b> of cross-asset moves.
-          {weight_note}
-          {direction_note}
+        <div class="ca-callout">
+        <b>RIGHT NOW:</b> The dominant theme explains <b>{explained*100:.0f}%</b> of cross-asset moves.
+        {weight_note} {direction_note}
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # Loadings as 3 metrics
     cols = st.columns(3)
+
     for col_widget, asset in zip(cols, ["SPX", "USGG10YR", "DXY"]):
         load = loadings.get(asset, np.nan)
         weight_label = loading_label(load)
+
         col_color = {
-            "SPX": COLOR_SPX, "USGG10YR": COLOR_UST10Y, "DXY": COLOR_DXY,
+            "SPX": COLOR_SPX,
+            "USGG10YR": COLOR_UST10Y,
+            "DXY": COLOR_DXY,
         }[asset]
+
+        sign = "+" if load >= 0 else ""
+
         with col_widget:
-            sign = "+" if load >= 0 else ""
             st.markdown(
                 f"""
-                <div style="text-align:center;padding:0.5rem 0;">
-                  <div style="font-size:10px;letter-spacing:0.1em;text-transform:uppercase;
-                              color:{col_color};font-weight:600;">
-                    {label_map[asset]} weight
-                  </div>
-                  <div style="font-size:24px;font-weight:700;
-                              font-family:'JetBrains Mono',monospace;color:#fff;">
-                    {sign}{load:.2f}
-                  </div>
-                  <div style="font-size:10px;color:#888;letter-spacing:0.05em;">
-                    {weight_label}
-                  </div>
+                <div class="ca-metric">
+                    <div class="ca-metric-label">{label_map[asset]} weight</div>
+                    <div class="ca-metric-value" style="color:{col_color};">{sign}{load:.2f}</div>
+                    <div class="ca-metric-sub">{weight_label}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-    # ---- Rolling loadings chart ----
-    roll = rolling_pca_loadings(returns, window=window, weighting=weighting,
-                                pca_method=pca_method,
-                                presmooth_halflife=presmooth_halflife)
-
-    # Low-confidence mask: when PC1 is not really dominant.
-    # Two failure modes flagged with the same gray band:
-    #   (1) Math instability: eigenvalue gap < 0.15 — PC1/PC2 are nearly tied,
-    #       so the chosen "dominant direction" is essentially arbitrary.
-    #   (2) Weak signal: PC1 explained variance < 0.50 — flags only genuinely
-    #       uninformative days. Note: this is looser than the regime panel's
-    #       0.60 threshold (which decides "Mixed" classification). The two
-    #       thresholds answer different questions:
-    #         - Gray band: "should I disclaim this loading reading?" (loose)
-    #         - Mixed bucket: "should this day get a clean sign-triple label?" (strict)
+    # Low-confidence mask
     low_conf_mask = (roll["EigGap"] < 0.15) | (roll["ExplainedVar"] < 0.50)
 
     fig = go.Figure()
 
-    # Shade low-confidence regions in the background
     if low_conf_mask.any():
-        # Find contiguous low-confidence bands
         in_band = False
         band_start = None
+
         for date, is_low in zip(roll.index, low_conf_mask):
             if is_low and not in_band:
                 band_start = date
                 in_band = True
             elif not is_low and in_band:
                 fig.add_vrect(
-                    x0=band_start, x1=date,
+                    x0=band_start,
+                    x1=date,
                     fillcolor="rgba(120,120,120,0.12)",
                     line=dict(width=0),
                     layer="below",
                 )
                 in_band = False
+
         if in_band:
             fig.add_vrect(
-                x0=band_start, x1=roll.index[-1],
+                x0=band_start,
+                x1=roll.index[-1],
                 fillcolor="rgba(120,120,120,0.12)",
                 line=dict(width=0),
                 layer="below",
             )
 
-    fig.add_trace(go.Scatter(
-        x=roll.index, y=roll["SPX_load"], mode="lines",
-        name="SPX weight",
-        line=dict(color=COLOR_SPX, width=1.4),
-        hovertemplate="<b>SPX</b><br>%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x=roll.index, y=roll["USGG10YR_load"], mode="lines",
-        name="UST 10Y weight",
-        line=dict(color=COLOR_UST10Y, width=1.4),
-        hovertemplate="<b>UST 10Y</b><br>%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x=roll.index, y=roll["DXY_load"], mode="lines",
-        name="DXY weight",
-        line=dict(color=COLOR_DXY, width=1.4),
-        hovertemplate="<b>DXY</b><br>%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=roll.index,
+            y=roll["SPX_load"],
+            mode="lines",
+            name="SPX weight",
+            line=dict(color=COLOR_SPX, width=1.4),
+            hovertemplate="SPX<br>%{x|%Y-%m-%d}: %{y:.3f}",
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=roll.index,
+            y=roll["USGG10YR_load"],
+            mode="lines",
+            name="UST 10Y weight",
+            line=dict(color=COLOR_UST10Y, width=1.4),
+            hovertemplate="UST 10Y<br>%{x|%Y-%m-%d}: %{y:.3f}",
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=roll.index,
+            y=roll["DXY_load"],
+            mode="lines",
+            name="DXY weight",
+            line=dict(color=COLOR_DXY, width=1.4),
+            hovertemplate="DXY<br>%{x|%Y-%m-%d}: %{y:.3f}",
+        )
+    )
+
     fig.add_hline(y=0, line=dict(color="rgba(255,255,255,0.2)", width=1))
 
     fig.update_layout(
@@ -714,25 +686,39 @@ loadings = {
         height=360,
         showlegend=True,
         legend=dict(
-            orientation="h", yanchor="top", y=-0.15,
-            xanchor="left", x=0,
-            bgcolor="rgba(0,0,0,0)", font=dict(size=10, color="#ccc"),
+            orientation="h",
+            yanchor="top",
+            y=-0.15,
+            xanchor="left",
+            x=0,
+            bgcolor="rgba(0,0,0,0)",
+            font=dict(size=10, color="#ccc"),
         ),
         xaxis=dict(
-            showgrid=True, gridcolor=GRID, zeroline=False,
+            showgrid=True,
+            gridcolor=GRID,
+            zeroline=False,
             tickfont=dict(size=9, color=TEXT_DIM),
-            rangeslider=dict(visible=True, bgcolor="#1a1a1a",
-                             bordercolor="#fbbf24", borderwidth=1, thickness=0.04),
+            rangeslider=dict(
+                visible=True,
+                bgcolor="#1a1a1a",
+                bordercolor="#fbbf24",
+                borderwidth=1,
+                thickness=0.04,
+            ),
             type="date",
         ),
         yaxis=dict(
             range=[-1, 1],
-            showgrid=True, gridcolor=GRID, zeroline=False,
+            showgrid=True,
+            gridcolor=GRID,
+            zeroline=False,
             tickfont=dict(size=9, color=TEXT_DIM),
             tickvals=[-1, -0.5, 0, 0.5, 1],
         ),
         margin=dict(l=40, r=20, t=10, b=80),
     )
+
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     st.caption(
@@ -741,8 +727,6 @@ loadings = {
         f"Gray bands = days where loadings are unreliable "
         f"(PC1 explains <50% of variance OR eigenvalue gap <0.15)."
     )
-
-
 # ---------------------------------------------------------------------------
 # Panel: Regime classification (8-bucket sign cube + persistence)
 # ---------------------------------------------------------------------------
