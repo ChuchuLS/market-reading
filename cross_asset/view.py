@@ -19,9 +19,14 @@ import streamlit as st
 from theming import BG, GRID, TEXT, TEXT_DIM, DARK_LAYOUT
 from cross_asset.analytics import (
     compute_returns,
-    rolling_pairwise_corrs, latest_pairwise_corrs,
-    pca_dominant_theme, rolling_pca_loadings, rolling_pca_loadings_cov,
-    correlation_story, loading_label,
+    compute_level_scaled,
+    rolling_pairwise_corrs,
+    latest_pairwise_corrs,
+    pca_dominant_theme,
+    rolling_pca_loadings,
+    rolling_pca_loadings_level_scaled,
+    correlation_story,
+    loading_label,
     __ANALYTICS_VERSION__,
 )
 from cross_asset.regime import (
@@ -318,6 +323,13 @@ def render_cross_asset():
     # data that hadn't updated yet). Including these rows mixes stale-data
     # zeros into the rolling correlation, biasing values toward zero.
     # Removing them brings the math in line with Bloomberg's CORREL function.
+    
+    level_scaled = compute_level_scaled(
+    prices,
+    lookback=500,
+    smooth_halflife=20,
+)
+    
     n_before = len(returns)
     returns = returns[(returns["SPX"] != 0) & (returns["USGG10YR"] != 0) & (returns["DXY"] != 0)]
     n_dropped = n_before - len(returns)
