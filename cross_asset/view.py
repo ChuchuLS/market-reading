@@ -1357,11 +1357,6 @@ def _render_price_levels(prices: pd.DataFrame):
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-level_scaled = compute_level_scaled(
-    prices,
-    lookback=500,
-    smooth_halflife=20,
-)
 
 roll_cov = rolling_pca_loadings_level_scaled(
     level_scaled,
