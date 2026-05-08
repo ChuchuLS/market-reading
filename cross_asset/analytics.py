@@ -147,6 +147,22 @@ def _weighted_corr_matrix(z: np.ndarray, w: np.ndarray) -> np.ndarray:
     return corr
 
 
+def _weighted_cov_matrix(x: np.ndarray, w: np.ndarray) -> np.ndarray:
+    """Weighted covariance matrix on data x (shape n x p). Weights sum to n.
+    Returns p x p covariance matrix WITHOUT unit-variance standardization.
+
+    Use this when you want PCA to preserve relative variance information
+    between assets. Caller is responsible for ensuring `x` is on a
+    comparable scale across columns (e.g., vol-scaled returns) — otherwise
+    units will dominate the eigendecomposition.
+    """
+    wsum = w.sum()
+    mean = (w[:, None] * x).sum(axis=0) / wsum
+    centered = x - mean
+    cov = (w[:, None] * centered).T @ centered / wsum
+    return cov
+
+
 def pca_dominant_theme(returns: pd.DataFrame, window: int = 60,
                        weighting: str = "equal") -> dict:
     """
@@ -290,8 +306,106 @@ def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60,
     return df
 
 
+def rolling_pca_loadings_cov(returns: pd.DataFrame, window: int = 60,
+                             weighting: str = "equal",
+                             pca_method: str = "standard",
+                             presmooth_halflife: int = 0,
+                             vol_lookback: int = 60) -> pd.DataFrame:
+    """
+    Rolling PC1 loadings using COVARIANCE PCA (preserves relative magnitude),
+    rather than the correlation PCA used by `rolling_pca_loadings`.
+
+    To prevent unit-of-measure pollution (basis points vs log-returns), each
+    asset's returns are first divided by their trailing realized vol over
+    `vol_lookback` days. This puts every asset on a "1 std-dev = 1 unit" scale
+    while preserving within-window relative-vol differences. Then a true
+    covariance PCA is run.
+
+    Resulting loadings are NOT unit-length on a standardized basis; instead
+    they reflect "in vol-adjusted variance units, how much does each asset
+    contribute to the dominant factor's direction."
+
+    Returns the same columns as rolling_pca_loadings:
+      SPX_load, USGG10YR_load, DXY_load, ExplainedVar, EigGap
+    """
+    cols = list(returns.columns)
+    spx_idx = cols.index("SPX")
+
+    # Pre-smooth (independent of PCA flavor)
+    if presmooth_halflife and presmooth_halflife > 0:
+        halflife = max(int(presmooth_halflife), 1)
+        returns_used = returns.ewm(halflife=halflife, min_periods=1).mean()
+    else:
+        returns_used = returns
+
+    # Vol-scale: divide each return by trailing realized vol (rolling std)
+    # We use a min_periods of 20 so early values aren't NaN-trapped
+    rolling_vol = returns_used.rolling(window=vol_lookback,
+                                       min_periods=20).std(ddof=1)
+    vol_scaled = returns_used / rolling_vol
+    vol_scaled = vol_scaled.dropna()
+
+    out_records = []
+    prev_pc1 = None
+
+    for end_idx in range(window, len(vol_scaled) + 1):
+        sub = vol_scaled.iloc[end_idx - window:end_idx]
+        if sub.isna().any().any():
+            continue
+        std = sub.std(ddof=1)
+        if (std == 0).any():
+            continue
+
+        x = sub.values
+        w = _make_weights(len(sub), weighting)
+        # KEY DIFFERENCE FROM rolling_pca_loadings: covariance, not correlation.
+        # The covariance matrix preserves relative-variance information that
+        # correlation PCA would normalize away.
+        cov = _weighted_cov_matrix(x, w)
+
+        eig_vals, eig_vecs = np.linalg.eigh(cov)
+        idx = np.argsort(eig_vals)[::-1]
+        eig_vals = eig_vals[idx]
+        eig_vecs = eig_vecs[:, idx]
+
+        pc1 = eig_vecs[:, 0]
+        # Sign convention
+        if pca_method == "procrustes" and prev_pc1 is not None:
+            if np.dot(pc1, prev_pc1) < 0:
+                pc1 = -pc1
+        else:
+            if pc1[spx_idx] < 0:
+                pc1 = -pc1
+        prev_pc1 = pc1.copy()
+
+        # Eigenvalues here are in vol-adjusted-variance units (not unit-trace).
+        # ExplainedVar = lambda1 / sum(lambdas) is still the right ratio.
+        total_var = eig_vals.sum()
+        explained = float(eig_vals[0] / total_var) if total_var > 0 else np.nan
+        eig_gap = float((eig_vals[0] - eig_vals[1]) / eig_vals[0]) \
+                  if eig_vals[0] > 0 else np.nan
+
+        out_records.append({
+            "Date": sub.index[-1],
+            "SPX_load": float(pc1[cols.index("SPX")]),
+            "USGG10YR_load": float(pc1[cols.index("USGG10YR")]),
+            "DXY_load": float(pc1[cols.index("DXY")]),
+            "ExplainedVar": explained,
+            "EigGap": eig_gap,
+        })
+
+    df = pd.DataFrame(out_records).set_index("Date")
+    if df.empty:
+        return df
+
+    if pca_method == "procrustes" and df["SPX_load"].iloc[-1] < 0:
+        df[["SPX_load", "USGG10YR_load", "DXY_load"]] *= -1
+
+    return df
+
+
 # Module version marker — bump when math changes so we can verify deployment
-__ANALYTICS_VERSION__ = "v7.0-2026-05-06"
+__ANALYTICS_VERSION__ = "v7.1-2026-05-08"
 
 
 # ---------------------------------------------------------------------------
