@@ -405,7 +405,9 @@ def rolling_pca_loadings_level_scaled(
         eig_vecs = eig_vecs[:, idx]
 
         pc1 = eig_vecs[:, 0]
-
+        asset_vol = sub.std().values
+        pc1 = pc1 * asset_vol
+        pc1 = pc1 / np.linalg.norm(pc1)
         # Sign convention. For procrustes, anchor SPX positive on the very
         # first iteration (no previous reference) so the chain has a stable
         # starting orientation.
