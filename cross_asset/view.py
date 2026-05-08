@@ -314,7 +314,12 @@ def render_cross_asset():
     )
 
     # Compute returns according to chosen method
-    returns = compute_returns(prices, vol_scale=(scaling == "volscale"))
+    returns = compute_returns(prices, vol_scale=(scaling == "volscale"),)
+
+    level_scaled = compute_level_scaled(
+        prices,
+        lookback=500,
+        smooth_halflife=20,)
 
     # Strict filter: drop days where any of the three returns is exactly 0.
     # A zero log-return / zero yield-diff means today's price equals yesterday's,
@@ -324,11 +329,7 @@ def render_cross_asset():
     # zeros into the rolling correlation, biasing values toward zero.
     # Removing them brings the math in line with Bloomberg's CORREL function.
     
-    level_scaled = compute_level_scaled(
-    prices,
-    lookback=500,
-    smooth_halflife=20,
-)
+
     
     n_before = len(returns)
     returns = returns[(returns["SPX"] != 0) & (returns["USGG10YR"] != 0) & (returns["DXY"] != 0)]
