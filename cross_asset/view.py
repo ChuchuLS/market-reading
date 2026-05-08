@@ -18,15 +18,10 @@ import streamlit as st
 
 from theming import BG, GRID, TEXT, TEXT_DIM, DARK_LAYOUT
 from cross_asset.analytics import (
-    compute_returns,
-    compute_level_scaled,
-    rolling_pairwise_corrs,
-    latest_pairwise_corrs,
-    pca_dominant_theme,
-    rolling_pca_loadings,
-    rolling_pca_loadings_level_scaled,
-    correlation_story,
-    loading_label,
+    compute_returns, compute_level_scaled,
+    rolling_pairwise_corrs, latest_pairwise_corrs,
+    pca_dominant_theme, rolling_pca_loadings, rolling_pca_loadings_level_scaled,
+    correlation_story, loading_label,
     __ANALYTICS_VERSION__,
 )
 from cross_asset.regime import (
@@ -314,18 +309,12 @@ def render_cross_asset():
     )
 
     # Compute returns according to chosen method
-    returns = compute_returns(
-        prices,
-        vol_scale=(scaling == "volscale"),
-    )
+    returns = compute_returns(prices, vol_scale=(scaling == "volscale"))
 
-    # Article-style LVL-SCALED state used by the covariance PCA chart.
-    # This must be computed inside render_cross_asset(), after prices exists.
-    level_scaled = compute_level_scaled(
-        prices,
-        lookback=500,
-        smooth_halflife=20,
-    )
+    # Level-scaled macro state — used by the level-scaled covariance PCA
+    # chart in the Dominant Theme panel. Operates on prices directly,
+    # independent of the returns scaling choice.
+    level_scaled = compute_level_scaled(prices, lookback=500, smooth_halflife=20)
 
     # Strict filter: drop days where any of the three returns is exactly 0.
     # A zero log-return / zero yield-diff means today's price equals yesterday's,
@@ -334,9 +323,6 @@ def render_cross_asset():
     # data that hadn't updated yet). Including these rows mixes stale-data
     # zeros into the rolling correlation, biasing values toward zero.
     # Removing them brings the math in line with Bloomberg's CORREL function.
-    
-
-    
     n_before = len(returns)
     returns = returns[(returns["SPX"] != 0) & (returns["USGG10YR"] != 0) & (returns["DXY"] != 0)]
     n_dropped = n_before - len(returns)
@@ -733,22 +719,26 @@ def _render_dominant_theme_panel(returns: pd.DataFrame, level_scaled: pd.DataFra
     )
 
     # ----- COVARIANCE PCA CHART (below correlation) -----
-    # Same window/weighting/sign/presmooth as correlation chart, but uses
-    # vol-scaled covariance PCA instead of correlation PCA. This preserves
-    # relative variance information that correlation PCA discards.
+    # Uses LEVEL-SCALED inputs (rolling z-scores of log-prices and yield levels,
+    # then EWMA-smoothed) instead of daily returns. Captures slow regime
+    # evolution: which macro state variable contributes most to the dominant
+    # factor over the rolling window.
     st.markdown(
         """
         <div style="font-size:13px;font-weight:600;letter-spacing:0.06em;color:#fbbf24;
                     margin:1.5rem 0 0.4rem 0;">
-          DOMINANT THEME · COVARIANCE PCA (LVL-SCALED)
+          DOMINANT THEME · COVARIANCE PCA (LEVEL-SCALED)
         </div>
         <div style="background:rgba(251,191,36,0.04);border:1px solid rgba(251,191,36,0.2);
                     padding:0.65rem 1rem;font-size:11px;color:#ccc;line-height:1.5;
                     margin-bottom:0.8rem;">
-          This version uses <b>covariance PCA</b> on article-style
-          <b>LVL-SCALED</b> inputs: log SPX, 10Y yield level, and log DXY,
-          each rolling z-scored once. Loadings reflect which level-scaled macro
-          state is contributing most to the dominant factor.
+          This version uses <b>covariance PCA</b> on <b>level-scaled</b> inputs:
+          log SPX, 10Y yield level, and log DXY — each rolling z-scored over a
+          ~2-year window, then smoothed with halflife=20 days. Loadings reflect
+          which macro state variable is contributing most to the slow regime
+          factor. Different from the chart above (which uses daily returns) —
+          this one tracks regime evolution rather than day-to-day co-movement.
+          Window=120, sign=Procrustes (hardcoded for this analysis).
         </div>
         """,
         unsafe_allow_html=True,
@@ -763,13 +753,13 @@ def _render_dominant_theme_panel(returns: pd.DataFrame, level_scaled: pd.DataFra
 
     if roll_cov.empty or len(roll_cov) < 5:
         st.caption(
-            "Not enough data for level-scaled covariance PCA. Try using more "
-            "price history or lowering the level-scaled/PCA lookback windows."
+            "Not enough data for level-scaled covariance PCA. The level-scaling "
+            "step requires at least 500 days of price history."
         )
     else:
         # Use the SAME gray-band mask as the correlation chart above so the two
-        # charts are visually comparable. Reindex the correlation mask onto the
-        # covariance dates (cov starts ~80 days later due to vol-scaling warmup).
+        # charts are visually comparable on the date axis. Reindex the
+        # correlation mask onto the level-scaled chart's dates.
         cov_low_conf = low_conf_mask.reindex(roll_cov.index, fill_value=False)
 
         fig_cov = go.Figure()
@@ -828,18 +818,15 @@ def _render_dominant_theme_panel(returns: pd.DataFrame, level_scaled: pd.DataFra
         st.plotly_chart(fig_cov, use_container_width=True,
                         config={"displayModeBar": False})
 
-        # Show latest covariance loadings + comparison to correlation
+        # Show latest level-scaled covariance loadings
         latest_cov = roll_cov.iloc[-1]
-        latest_corr_cmp = roll.iloc[-1]
         st.caption(
-            f"Latest cov-PCA loadings: SPX {latest_cov['SPX_load']:+.2f} · "
+            f"Latest level-scaled cov-PCA loadings: SPX {latest_cov['SPX_load']:+.2f} · "
             f"UST10Y {latest_cov['USGG10YR_load']:+.2f} · "
             f"DXY {latest_cov['DXY_load']:+.2f} · "
             f"PC1 explains {latest_cov['ExplainedVar']*100:.0f}% of level-scaled variance · "
-            f"Differences vs correlation PCA above: "
-            f"SPX {latest_cov['SPX_load']-latest_corr_cmp['SPX_load']:+.2f}, "
-            f"UST10Y {latest_cov['USGG10YR_load']-latest_corr_cmp['USGG10YR_load']:+.2f}, "
-            f"DXY {latest_cov['DXY_load']-latest_corr_cmp['DXY_load']:+.2f}."
+            f"This chart is NOT directly comparable to the chart above — it operates "
+            f"on macro-state levels, not daily returns."
         )
 
 
@@ -1363,6 +1350,3 @@ def _render_price_levels(prices: pd.DataFrame):
         margin=dict(l=60, r=80, t=40, b=30),
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-
-
-
