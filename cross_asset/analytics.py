@@ -67,6 +67,93 @@ def compute_returns(prices: pd.DataFrame, vol_scale: bool = False,
 
     return out
 
+# CHATGPT加的部分
+def compute_level_scaled(
+    prices: pd.DataFrame,
+    lookback: int = 500,
+    smooth_halflife: int = 20,
+) -> pd.DataFrame:
+    x = pd.DataFrame(index=prices.index)
+
+    x["SPX"] = np.log(prices["SPX"])
+    x["USGG10YR"] = prices["USGG10YR"]
+    x["DXY"] = np.log(prices["DXY"])
+
+    mu = x.rolling(lookback, min_periods=max(60, lookback // 4)).mean()
+    sig = x.rolling(lookback, min_periods=max(60, lookback // 4)).std(ddof=1)
+
+    z = (x - mu) / sig
+    z = z.dropna()
+
+    if smooth_halflife and smooth_halflife > 0:
+        z = z.ewm(halflife=smooth_halflife, min_periods=1).mean()
+
+    return z.dropna()
+
+def rolling_pca_loadings_level_scaled(
+    level_scaled: pd.DataFrame,
+    window: int = 120,
+    weighting: str = "equal",
+    pca_method: str = "procrustes",
+) -> pd.DataFrame:
+    cols = list(level_scaled.columns)
+    spx_idx = cols.index("SPX")
+
+    out_records = []
+    prev_pc1 = None
+
+    for end_idx in range(window, len(level_scaled) + 1):
+        sub = level_scaled.iloc[end_idx - window:end_idx].dropna()
+
+        if len(sub) < window // 2:
+            continue
+
+        x = sub.values
+        w = _make_weights(len(sub), weighting)
+
+        cov = _weighted_cov_matrix(x, w)
+
+        eig_vals, eig_vecs = np.linalg.eigh(cov)
+        idx = np.argsort(eig_vals)[::-1]
+        eig_vals = eig_vals[idx]
+        eig_vecs = eig_vecs[:, idx]
+
+        pc1 = eig_vecs[:, 0]
+
+        if pca_method == "procrustes" and prev_pc1 is not None:
+            if np.dot(pc1, prev_pc1) < 0:
+                pc1 = -pc1
+        else:
+            if pc1[spx_idx] < 0:
+                pc1 = -pc1
+
+        prev_pc1 = pc1.copy()
+
+        total_var = eig_vals.sum()
+        explained = float(eig_vals[0] / total_var) if total_var > 0 else np.nan
+        eig_gap = float((eig_vals[0] - eig_vals[1]) / eig_vals[0]) if eig_vals[0] > 0 else np.nan
+
+        out_records.append({
+            "Date": sub.index[-1],
+            "SPX_load": float(pc1[cols.index("SPX")]),
+            "USGG10YR_load": float(pc1[cols.index("USGG10YR")]),
+            "DXY_load": float(pc1[cols.index("DXY")]),
+            "ExplainedVar": explained,
+            "EigGap": eig_gap,
+        })
+
+    df = pd.DataFrame(out_records)
+
+    if df.empty:
+        return df
+
+    df = df.set_index("Date")
+
+    if pca_method == "procrustes" and df["SPX_load"].iloc[-1] < 0:
+        df[["SPX_load", "USGG10YR_load", "DXY_load"]] *= -1
+
+    return df
+   # CHATGPT加的部分
 
 # ---------------------------------------------------------------------------
 # Pairwise rolling correlations
@@ -305,7 +392,94 @@ def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60,
 
     return df
 
+# chetgpt
+def rolling_pca_loadings_level_scaled(
+    level_scaled: pd.DataFrame,
+    window: int = 120,
+    weighting: str = "equal",
+    pca_method: str = "procrustes",
+) -> pd.DataFrame:
 
+    cols = list(level_scaled.columns)
+    spx_idx = cols.index("SPX")
+
+    out_records = []
+    prev_pc1 = None
+
+    for end_idx in range(window, len(level_scaled) + 1):
+
+        sub = level_scaled.iloc[end_idx - window:end_idx].dropna()
+
+        if len(sub) < window // 2:
+            continue
+
+        x = sub.values
+
+        w = _make_weights(len(sub), weighting)
+
+        cov = _weighted_cov_matrix(x, w)
+
+        eig_vals, eig_vecs = np.linalg.eigh(cov)
+
+        idx = np.argsort(eig_vals)[::-1]
+
+        eig_vals = eig_vals[idx]
+        eig_vecs = eig_vecs[:, idx]
+
+        pc1 = eig_vecs[:, 0]
+
+        if pca_method == "procrustes":
+            if prev_pc1 is not None:
+                if np.dot(pc1, prev_pc1) < 0:
+                    pc1 = -pc1
+            else:
+                if pc1[spx_idx] < 0:
+                    pc1 = -pc1
+        else:
+            if pc1[spx_idx] < 0:
+                pc1 = -pc1
+
+        prev_pc1 = pc1.copy()
+
+        total_var = eig_vals.sum()
+
+        explained = (
+            float(eig_vals[0] / total_var)
+            if total_var > 0 else np.nan
+        )
+
+        eig_gap = (
+            float((eig_vals[0] - eig_vals[1]) / eig_vals[0])
+            if eig_vals[0] > 0 else np.nan
+        )
+
+        out_records.append({
+            "Date": sub.index[-1],
+            "SPX_load": float(pc1[cols.index("SPX")]),
+            "USGG10YR_load": float(pc1[cols.index("USGG10YR")]),
+            "DXY_load": float(pc1[cols.index("DXY")]),
+            "ExplainedVar": explained,
+            "EigGap": eig_gap,
+        })
+
+    df = pd.DataFrame(out_records)
+
+    if df.empty:
+        return df
+
+    df = df.set_index("Date")
+
+    if (
+        pca_method == "procrustes"
+        and df["SPX_load"].iloc[-1] < 0
+    ):
+        df[
+            ["SPX_load", "USGG10YR_load", "DXY_load"]
+        ] *= -1
+
+    return df
+
+# chatgpt
 def rolling_pca_loadings_cov(returns: pd.DataFrame, window: int = 60,
                              weighting: str = "equal",
                              pca_method: str = "standard",
@@ -461,93 +635,3 @@ def loading_label(load: float) -> str:
         return "moderate"
     else:
         return "heavy"
-
-
-# CHATGPT加的部分
-def compute_level_scaled(
-    prices: pd.DataFrame,
-    lookback: int = 500,
-    smooth_halflife: int = 20,
-) -> pd.DataFrame:
-    x = pd.DataFrame(index=prices.index)
-
-    x["SPX"] = np.log(prices["SPX"])
-    x["USGG10YR"] = prices["USGG10YR"]
-    x["DXY"] = np.log(prices["DXY"])
-
-    mu = x.rolling(lookback, min_periods=max(60, lookback // 4)).mean()
-    sig = x.rolling(lookback, min_periods=max(60, lookback // 4)).std(ddof=1)
-
-    z = (x - mu) / sig
-    z = z.dropna()
-
-    if smooth_halflife and smooth_halflife > 0:
-        z = z.ewm(halflife=smooth_halflife, min_periods=1).mean()
-
-    return z.dropna()
-
-def rolling_pca_loadings_level_scaled(
-    level_scaled: pd.DataFrame,
-    window: int = 120,
-    weighting: str = "equal",
-    pca_method: str = "procrustes",
-) -> pd.DataFrame:
-    cols = list(level_scaled.columns)
-    spx_idx = cols.index("SPX")
-
-    out_records = []
-    prev_pc1 = None
-
-    for end_idx in range(window, len(level_scaled) + 1):
-        sub = level_scaled.iloc[end_idx - window:end_idx].dropna()
-
-        if len(sub) < window // 2:
-            continue
-
-        x = sub.values
-        w = _make_weights(len(sub), weighting)
-
-        cov = _weighted_cov_matrix(x, w)
-
-        eig_vals, eig_vecs = np.linalg.eigh(cov)
-        idx = np.argsort(eig_vals)[::-1]
-        eig_vals = eig_vals[idx]
-        eig_vecs = eig_vecs[:, idx]
-
-        pc1 = eig_vecs[:, 0]
-
-        if pca_method == "procrustes" and prev_pc1 is not None:
-            if np.dot(pc1, prev_pc1) < 0:
-                pc1 = -pc1
-        else:
-            if pc1[spx_idx] < 0:
-                pc1 = -pc1
-
-        prev_pc1 = pc1.copy()
-
-        total_var = eig_vals.sum()
-        explained = float(eig_vals[0] / total_var) if total_var > 0 else np.nan
-        eig_gap = float((eig_vals[0] - eig_vals[1]) / eig_vals[0]) if eig_vals[0] > 0 else np.nan
-
-        out_records.append({
-            "Date": sub.index[-1],
-            "SPX_load": float(pc1[cols.index("SPX")]),
-            "USGG10YR_load": float(pc1[cols.index("USGG10YR")]),
-            "DXY_load": float(pc1[cols.index("DXY")]),
-            "ExplainedVar": explained,
-            "EigGap": eig_gap,
-        })
-
-    df = pd.DataFrame(out_records)
-
-    if df.empty:
-        return df
-
-    df = df.set_index("Date")
-
-    if pca_method == "procrustes" and df["SPX_load"].iloc[-1] < 0:
-        df[["SPX_load", "USGG10YR_load", "DXY_load"]] *= -1
-
-    return df
-   # CHATGPT加的部分
-
