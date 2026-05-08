@@ -314,12 +314,18 @@ def render_cross_asset():
     )
 
     # Compute returns according to chosen method
-    returns = compute_returns(prices, vol_scale=(scaling == "volscale"),)
+    returns = compute_returns(
+        prices,
+        vol_scale=(scaling == "volscale"),
+    )
 
+    # Article-style LVL-SCALED state used by the covariance PCA chart.
+    # This must be computed inside render_cross_asset(), after prices exists.
     level_scaled = compute_level_scaled(
         prices,
         lookback=500,
-        smooth_halflife=20,)
+        smooth_halflife=20,
+    )
 
     # Strict filter: drop days where any of the three returns is exactly 0.
     # A zero log-return / zero yield-diff means today's price equals yesterday's,
@@ -360,7 +366,7 @@ def render_cross_asset():
             _render_correlations_panel(returns)
 
         with col_right:
-            _render_dominant_theme_panel(returns)
+            _render_dominant_theme_panel(returns, level_scaled)
 
     with tab_regime:
         _render_regime_panel(returns)
@@ -481,7 +487,7 @@ def _render_correlations_panel(returns: pd.DataFrame):
 # ---------------------------------------------------------------------------
 # Panel 2: Dominant theme (PCA)
 # ---------------------------------------------------------------------------
-def _render_dominant_theme_panel(returns: pd.DataFrame):
+def _render_dominant_theme_panel(returns: pd.DataFrame, level_scaled: pd.DataFrame):
     st.markdown(
         """
         <div style="font-size:14px;font-weight:700;letter-spacing:0.06em;color:#fbbf24;
@@ -734,31 +740,31 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
         """
         <div style="font-size:13px;font-weight:600;letter-spacing:0.06em;color:#fbbf24;
                     margin:1.5rem 0 0.4rem 0;">
-          DOMINANT THEME · COVARIANCE PCA (VOL-SCALED)
+          DOMINANT THEME · COVARIANCE PCA (LVL-SCALED)
         </div>
         <div style="background:rgba(251,191,36,0.04);border:1px solid rgba(251,191,36,0.2);
                     padding:0.65rem 1rem;font-size:11px;color:#ccc;line-height:1.5;
                     margin-bottom:0.8rem;">
-          Same as the chart above, but uses <b>covariance PCA</b> on
-          vol-scaled returns. Loadings here reflect <b>relative variance contribution</b>
-          to the dominant factor — assets with higher recent realized vol get heavier
-          loadings even if all three are highly correlated. Compare with the chart above
-          to see when correlation and variance pictures diverge.
+          This version uses <b>covariance PCA</b> on article-style
+          <b>LVL-SCALED</b> inputs: log SPX, 10Y yield level, and log DXY,
+          each rolling z-scored once. Loadings reflect which level-scaled macro
+          state is contributing most to the dominant factor.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     roll_cov = rolling_pca_loadings_level_scaled(
-    level_scaled,
-    window=120,
-    weighting="equal",
-    pca_method="procrustes",)
+        level_scaled,
+        window=120,
+        weighting="equal",
+        pca_method="procrustes",
+    )
 
     if roll_cov.empty or len(roll_cov) < 5:
         st.caption(
-            "Not enough data for covariance PCA. The vol-scaling step requires "
-            "at least 80 days of history before the rolling window starts."
+            "Not enough data for level-scaled covariance PCA. Try using more "
+            "price history or lowering the level-scaled/PCA lookback windows."
         )
     else:
         # Use the SAME gray-band mask as the correlation chart above so the two
@@ -829,7 +835,7 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
             f"Latest cov-PCA loadings: SPX {latest_cov['SPX_load']:+.2f} · "
             f"UST10Y {latest_cov['USGG10YR_load']:+.2f} · "
             f"DXY {latest_cov['DXY_load']:+.2f} · "
-            f"PC1 explains {latest_cov['ExplainedVar']*100:.0f}% of vol-adjusted variance · "
+            f"PC1 explains {latest_cov['ExplainedVar']*100:.0f}% of level-scaled variance · "
             f"Differences vs correlation PCA above: "
             f"SPX {latest_cov['SPX_load']-latest_corr_cmp['SPX_load']:+.2f}, "
             f"UST10Y {latest_cov['USGG10YR_load']-latest_corr_cmp['USGG10YR_load']:+.2f}, "
