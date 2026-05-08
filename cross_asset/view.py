@@ -544,9 +544,29 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
             ),
         )
 
-    pca = pca_dominant_theme(returns, window=window, weighting=weighting)
-    explained = pca["explained_variance"]
-    loadings = pca["loadings"]
+    # pca = pca_dominant_theme(returns, window=window, weighting=weighting)
+    # explained = pca["explained_variance"]
+    # loadings = pca["loadings"]
+
+    roll = rolling_pca_loadings(
+    returns,
+    window=window,
+    weighting=weighting,
+    pca_method=pca_method,
+    presmooth_halflife=presmooth_halflife,
+)
+
+if roll.empty:
+    st.warning("Not enough data to compute PCA. Try a shorter window.")
+    return
+
+latest = roll.iloc[-1]
+explained = float(latest["ExplainedVar"])
+loadings = {
+    "SPX": float(latest["SPX_load"]),
+    "USGG10YR": float(latest["USGG10YR_load"]),
+    "DXY": float(latest["DXY_load"]),
+}
 
     # Mixed vs aligned interpretation
     signs = {a: ("pos" if v > 0 else "neg") for a, v in loadings.items()}
