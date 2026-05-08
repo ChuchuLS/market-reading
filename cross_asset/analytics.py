@@ -67,93 +67,50 @@ def compute_returns(prices: pd.DataFrame, vol_scale: bool = False,
 
     return out
 
-# CHATGPT加的部分
+
+# ---------------------------------------------------------------------------
+# Level-scaled state (for macro-regime PCA)
+# ---------------------------------------------------------------------------
 def compute_level_scaled(
     prices: pd.DataFrame,
     lookback: int = 500,
     smooth_halflife: int = 20,
 ) -> pd.DataFrame:
-    x = pd.DataFrame(index=prices.index)
+    """
+    Convert raw prices to a "level-scaled" macro state series:
+      SPX        -> log(SPX), then rolling z-score
+      USGG10YR   -> raw yield level, then rolling z-score
+      DXY        -> log(DXY), then rolling z-score
+    Then optionally smooth the z-scored result with an EWMA halflife.
 
+    This is the input for level-based PCA (vs the daily-returns-based PCA).
+    The output captures slow macro regime evolution: where each asset sits
+    relative to its trailing 2-year mean, in standard deviations.
+
+    Parameters
+    ----------
+    lookback : int
+        Rolling window for mean/std normalization (default 500 ≈ 2 years).
+    smooth_halflife : int
+        EWMA halflife applied AFTER z-scoring. 0 disables smoothing.
+        Default 20 produces trending macro regime curves.
+    """
+    x = pd.DataFrame(index=prices.index)
     x["SPX"] = np.log(prices["SPX"])
     x["USGG10YR"] = prices["USGG10YR"]
     x["DXY"] = np.log(prices["DXY"])
 
-    mu = x.rolling(lookback, min_periods=max(60, lookback // 4)).mean()
-    sig = x.rolling(lookback, min_periods=max(60, lookback // 4)).std(ddof=1)
+    min_periods = max(60, lookback // 4)
+    mu = x.rolling(lookback, min_periods=min_periods).mean()
+    sig = x.rolling(lookback, min_periods=min_periods).std(ddof=1)
 
-    z = (x - mu) / sig
-    z = z.dropna()
+    z = ((x - mu) / sig).dropna()
 
     if smooth_halflife and smooth_halflife > 0:
         z = z.ewm(halflife=smooth_halflife, min_periods=1).mean()
 
     return z.dropna()
 
-def rolling_pca_loadings_level_scaled(
-    level_scaled: pd.DataFrame,
-    window: int = 120,
-    weighting: str = "equal",
-    pca_method: str = "procrustes",
-) -> pd.DataFrame:
-    cols = list(level_scaled.columns)
-    spx_idx = cols.index("SPX")
-
-    out_records = []
-    prev_pc1 = None
-
-    for end_idx in range(window, len(level_scaled) + 1):
-        sub = level_scaled.iloc[end_idx - window:end_idx].dropna()
-
-        if len(sub) < window // 2:
-            continue
-
-        x = sub.values
-        w = _make_weights(len(sub), weighting)
-
-        cov = _weighted_cov_matrix(x, w)
-
-        eig_vals, eig_vecs = np.linalg.eigh(cov)
-        idx = np.argsort(eig_vals)[::-1]
-        eig_vals = eig_vals[idx]
-        eig_vecs = eig_vecs[:, idx]
-
-        pc1 = eig_vecs[:, 0]
-
-        if pca_method == "procrustes" and prev_pc1 is not None:
-            if np.dot(pc1, prev_pc1) < 0:
-                pc1 = -pc1
-        else:
-            if pc1[spx_idx] < 0:
-                pc1 = -pc1
-
-        prev_pc1 = pc1.copy()
-
-        total_var = eig_vals.sum()
-        explained = float(eig_vals[0] / total_var) if total_var > 0 else np.nan
-        eig_gap = float((eig_vals[0] - eig_vals[1]) / eig_vals[0]) if eig_vals[0] > 0 else np.nan
-
-        out_records.append({
-            "Date": sub.index[-1],
-            "SPX_load": float(pc1[cols.index("SPX")]),
-            "USGG10YR_load": float(pc1[cols.index("USGG10YR")]),
-            "DXY_load": float(pc1[cols.index("DXY")]),
-            "ExplainedVar": explained,
-            "EigGap": eig_gap,
-        })
-
-    df = pd.DataFrame(out_records)
-
-    if df.empty:
-        return df
-
-    df = df.set_index("Date")
-
-    if pca_method == "procrustes" and df["SPX_load"].iloc[-1] < 0:
-        df[["SPX_load", "USGG10YR_load", "DXY_load"]] *= -1
-
-    return df
-   # CHATGPT加的部分
 
 # ---------------------------------------------------------------------------
 # Pairwise rolling correlations
@@ -392,14 +349,41 @@ def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60,
 
     return df
 
-# chetgpt
+
 def rolling_pca_loadings_level_scaled(
     level_scaled: pd.DataFrame,
     window: int = 120,
     weighting: str = "equal",
     pca_method: str = "procrustes",
 ) -> pd.DataFrame:
+    """
+    Rolling COVARIANCE PCA on the level-scaled macro state (output of
+    `compute_level_scaled`).
 
+    Captures slow regime evolution: which macro state variable contributes
+    most to the dominant factor's direction over the rolling window.
+
+    Loadings should be read as: "in level-scaled units (z-scores of
+    log-prices and yield levels), how much does each asset contribute to
+    the dominant macro factor."
+
+    Parameters
+    ----------
+    level_scaled : DataFrame
+        Output of compute_level_scaled(). Columns: SPX, USGG10YR, DXY.
+    window : int
+        Rolling window length (default 120 ≈ 6 months — appropriate for
+        the slow level-scaled time series).
+    weighting : "equal" | "ewm"
+        Within-window weighting.
+    pca_method : "standard" | "procrustes"
+        Sign convention. Default procrustes for smooth regime tracking.
+
+    Returns
+    -------
+    DataFrame with columns SPX_load, USGG10YR_load, DXY_load,
+    ExplainedVar, EigGap. Indexed by Date.
+    """
     cols = list(level_scaled.columns)
     spx_idx = cols.index("SPX")
 
@@ -407,27 +391,24 @@ def rolling_pca_loadings_level_scaled(
     prev_pc1 = None
 
     for end_idx in range(window, len(level_scaled) + 1):
-
         sub = level_scaled.iloc[end_idx - window:end_idx].dropna()
-
         if len(sub) < window // 2:
             continue
 
         x = sub.values
-
         w = _make_weights(len(sub), weighting)
-
         cov = _weighted_cov_matrix(x, w)
 
         eig_vals, eig_vecs = np.linalg.eigh(cov)
-
         idx = np.argsort(eig_vals)[::-1]
-
         eig_vals = eig_vals[idx]
         eig_vecs = eig_vecs[:, idx]
 
         pc1 = eig_vecs[:, 0]
 
+        # Sign convention. For procrustes, anchor SPX positive on the very
+        # first iteration (no previous reference) so the chain has a stable
+        # starting orientation.
         if pca_method == "procrustes":
             if prev_pc1 is not None:
                 if np.dot(pc1, prev_pc1) < 0:
@@ -438,122 +419,8 @@ def rolling_pca_loadings_level_scaled(
         else:
             if pc1[spx_idx] < 0:
                 pc1 = -pc1
-
         prev_pc1 = pc1.copy()
 
-        total_var = eig_vals.sum()
-
-        explained = (
-            float(eig_vals[0] / total_var)
-            if total_var > 0 else np.nan
-        )
-
-        eig_gap = (
-            float((eig_vals[0] - eig_vals[1]) / eig_vals[0])
-            if eig_vals[0] > 0 else np.nan
-        )
-
-        out_records.append({
-            "Date": sub.index[-1],
-            "SPX_load": float(pc1[cols.index("SPX")]),
-            "USGG10YR_load": float(pc1[cols.index("USGG10YR")]),
-            "DXY_load": float(pc1[cols.index("DXY")]),
-            "ExplainedVar": explained,
-            "EigGap": eig_gap,
-        })
-
-    df = pd.DataFrame(out_records)
-
-    if df.empty:
-        return df
-
-    df = df.set_index("Date")
-
-    if (
-        pca_method == "procrustes"
-        and df["SPX_load"].iloc[-1] < 0
-    ):
-        df[
-            ["SPX_load", "USGG10YR_load", "DXY_load"]
-        ] *= -1
-
-    return df
-
-# chatgpt
-def rolling_pca_loadings_cov(returns: pd.DataFrame, window: int = 60,
-                             weighting: str = "equal",
-                             pca_method: str = "standard",
-                             presmooth_halflife: int = 0,
-                             vol_lookback: int = 60) -> pd.DataFrame:
-    """
-    Rolling PC1 loadings using COVARIANCE PCA (preserves relative magnitude),
-    rather than the correlation PCA used by `rolling_pca_loadings`.
-
-    To prevent unit-of-measure pollution (basis points vs log-returns), each
-    asset's returns are first divided by their trailing realized vol over
-    `vol_lookback` days. This puts every asset on a "1 std-dev = 1 unit" scale
-    while preserving within-window relative-vol differences. Then a true
-    covariance PCA is run.
-
-    Resulting loadings are NOT unit-length on a standardized basis; instead
-    they reflect "in vol-adjusted variance units, how much does each asset
-    contribute to the dominant factor's direction."
-
-    Returns the same columns as rolling_pca_loadings:
-      SPX_load, USGG10YR_load, DXY_load, ExplainedVar, EigGap
-    """
-    cols = list(returns.columns)
-    spx_idx = cols.index("SPX")
-
-    # Pre-smooth (independent of PCA flavor)
-    if presmooth_halflife and presmooth_halflife > 0:
-        halflife = max(int(presmooth_halflife), 1)
-        returns_used = returns.ewm(halflife=halflife, min_periods=1).mean()
-    else:
-        returns_used = returns
-
-    # Vol-scale: divide each return by trailing realized vol (rolling std)
-    # We use a min_periods of 20 so early values aren't NaN-trapped
-    rolling_vol = returns_used.rolling(window=vol_lookback,
-                                       min_periods=20).std(ddof=1)
-    vol_scaled = returns_used / rolling_vol
-    vol_scaled = vol_scaled.dropna()
-
-    out_records = []
-    prev_pc1 = None
-
-    for end_idx in range(window, len(vol_scaled) + 1):
-        sub = vol_scaled.iloc[end_idx - window:end_idx]
-        if sub.isna().any().any():
-            continue
-        std = sub.std(ddof=1)
-        if (std == 0).any():
-            continue
-
-        x = sub.values
-        w = _make_weights(len(sub), weighting)
-        # KEY DIFFERENCE FROM rolling_pca_loadings: covariance, not correlation.
-        # The covariance matrix preserves relative-variance information that
-        # correlation PCA would normalize away.
-        cov = _weighted_cov_matrix(x, w)
-
-        eig_vals, eig_vecs = np.linalg.eigh(cov)
-        idx = np.argsort(eig_vals)[::-1]
-        eig_vals = eig_vals[idx]
-        eig_vecs = eig_vecs[:, idx]
-
-        pc1 = eig_vecs[:, 0]
-        # Sign convention
-        if pca_method == "procrustes" and prev_pc1 is not None:
-            if np.dot(pc1, prev_pc1) < 0:
-                pc1 = -pc1
-        else:
-            if pc1[spx_idx] < 0:
-                pc1 = -pc1
-        prev_pc1 = pc1.copy()
-
-        # Eigenvalues here are in vol-adjusted-variance units (not unit-trace).
-        # ExplainedVar = lambda1 / sum(lambdas) is still the right ratio.
         total_var = eig_vals.sum()
         explained = float(eig_vals[0] / total_var) if total_var > 0 else np.nan
         eig_gap = float((eig_vals[0] - eig_vals[1]) / eig_vals[0]) \
@@ -568,9 +435,10 @@ def rolling_pca_loadings_cov(returns: pd.DataFrame, window: int = 60,
             "EigGap": eig_gap,
         })
 
-    df = pd.DataFrame(out_records).set_index("Date")
+    df = pd.DataFrame(out_records)
     if df.empty:
         return df
+    df = df.set_index("Date")
 
     if pca_method == "procrustes" and df["SPX_load"].iloc[-1] < 0:
         df[["SPX_load", "USGG10YR_load", "DXY_load"]] *= -1
@@ -579,7 +447,7 @@ def rolling_pca_loadings_cov(returns: pd.DataFrame, window: int = 60,
 
 
 # Module version marker — bump when math changes so we can verify deployment
-__ANALYTICS_VERSION__ = "v7.1-2026-05-08"
+__ANALYTICS_VERSION__ = "v7.2-2026-05-08"
 
 
 # ---------------------------------------------------------------------------
