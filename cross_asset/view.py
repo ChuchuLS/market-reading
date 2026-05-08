@@ -749,10 +749,11 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
         unsafe_allow_html=True,
     )
 
-    roll_cov = rolling_pca_loadings_cov(
-        returns, window=window, weighting=weighting,
-        pca_method=pca_method, presmooth_halflife=presmooth_halflife,
-    )
+    roll_cov = rolling_pca_loadings_level_scaled(
+    level_scaled,
+    window=120,
+    weighting="equal",
+    pca_method="procrustes",)
 
     if roll_cov.empty or len(roll_cov) < 5:
         st.caption(
