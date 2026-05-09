@@ -70,6 +70,16 @@ DIVERGING_SCALE = [
     [1.0, COLOR_POS_BRIGHT],
 ]
 
+# Grayscale magnitude-only scale: black (zero) → white (|loading|=1).
+# Used for heatmaps where sign is encoded separately as +/− text overlay.
+# This avoids the smooth-gradient legibility problem entirely — pure
+# light/dark contrast is the most readable encoding of magnitude.
+GRAYSCALE_MAG = [
+    [0.0, "#0a0a0a"],   # near-black at zero
+    [0.5, "#737373"],   # mid-gray
+    [1.0, "#f5f5f5"],   # near-white at max
+]
+
 # Sequential blue scale for one-dimensional severity (used in transitions log
 # for rotation magnitude — severity is one-dimensional so we use a single hue
 # rather than a diverging scale).
@@ -379,12 +389,14 @@ def _render_heatmap_panel(loadings: pd.DataFrame, returns: pd.DataFrame):
                     padding:0.75rem 1rem;font-size:11px;color:#ccc;line-height:1.6;
                     margin-bottom:1rem;">
           <span style="color:#fbbf24;font-weight:600;">What this shows:</span>
-          5 rows, one per asset. Each cell's <b>intensity</b> = how much that asset
+          5 rows, one per asset. Cell <b>brightness</b> = how much that asset
           is participating in the dominant theme on that day (|PC1 loading|).
-          <span style="color:#3b82f6;font-weight:600;">Blue</span> = same side as SPX
-          (positive PC1 loading). <span style="color:#f97316;font-weight:600;">Orange</span>
-          = opposite side of SPX (negative loading).
-          Regimes appear as <b>vertical bands</b> of consistent color and intensity.
+          <b style="color:#f5f5f5;">White</b> = strong participation,
+          <b style="color:#737373;">gray</b> = moderate, <b>black</b> = barely participating.
+          The <b>+</b> / <b>−</b> symbols inside cells indicate sign vs SPX:
+          <b>+</b> = same side as SPX (positive PC1 loading),
+          <b>−</b> = opposite SPX. SPX itself is always +.
+          Regimes appear as <b>vertical bands</b> of consistent brightness and signs.
         </div>
         """,
         unsafe_allow_html=True,
@@ -394,22 +406,50 @@ def _render_heatmap_panel(loadings: pd.DataFrame, returns: pd.DataFrame):
         st.warning("Not enough data to compute loadings yet.")
         return
 
-    Z = np.array([loadings[f"{a}_load"].values for a in ASSETS])
+    # Magnitude matrix (always non-negative, for grayscale intensity)
+    Z_mag = np.array([loadings[f"{a}_load"].abs().values for a in ASSETS])
+
+    # Sign matrix as text overlay. Only show symbols on cells with meaningful
+    # magnitude (|loading| ≥ 0.20) — below that, the cell is too dark to read
+    # a symbol against and the sign isn't very meaningful anyway.
+    SIGN_THRESHOLD = 0.20
+    Z_signed = np.array([loadings[f"{a}_load"].values for a in ASSETS])
+    text_grid = np.where(
+        np.abs(Z_signed) >= SIGN_THRESHOLD,
+        np.where(Z_signed >= 0, "+", "−"),
+        ""
+    )
+
+    # Custom hover so we still show the signed loading value
+    hover_text = np.array([
+        [f"loading = {Z_signed[i, j]:+.3f}" for j in range(Z_signed.shape[1])]
+        for i in range(Z_signed.shape[0])
+    ])
 
     fig = go.Figure(data=go.Heatmap(
-        z=Z,
+        z=Z_mag,
         x=loadings.index,
         y=[ASSET_LABELS[a] for a in ASSETS],
-        colorscale=DIVERGING_SCALE,
-        zmid=0,
-        zmin=-1, zmax=1,
+        colorscale=GRAYSCALE_MAG,
+        zmin=0, zmax=1,
+        text=text_grid,
+        texttemplate="%{text}",
+        textfont=dict(
+            family="JetBrains Mono",
+            size=9,
+            # Symbol color: dynamic per cell would be ideal but plotly
+            # heatmaps don't support per-cell text color. Use a mid-gray
+            # that's visible on both dark and light backgrounds.
+            color="#fbbf24",
+        ),
+        customdata=hover_text,
+        hovertemplate="<b>%{y}</b><br>%{x|%Y-%m-%d}<br>%{customdata}<extra></extra>",
         colorbar=dict(
-            title=dict(text="PC1 loading", font=dict(color=TEXT_DIM, size=10)),
+            title=dict(text="|PC1 loading|", font=dict(color=TEXT_DIM, size=10)),
             tickfont=dict(color=TEXT_DIM, size=9),
-            tickvals=[-1, -0.5, 0, 0.5, 1],
+            tickvals=[0, 0.25, 0.5, 0.75, 1.0],
             len=0.85, thickness=12,
         ),
-        hovertemplate="<b>%{y}</b><br>%{x|%Y-%m-%d}<br>loading = %{z:.3f}<extra></extra>",
     ))
 
     fig.update_layout(
@@ -659,10 +699,9 @@ def _render_correlations_panel(returns: pd.DataFrame):
                     padding:0.75rem 1rem;font-size:11px;color:#ccc;line-height:1.6;
                     margin-bottom:1rem;">
           <span style="color:#fbbf24;font-weight:600;">What this shows:</span>
-          All 10 unique pairs from the 5-asset basket. Today's correlations as a
-          matrix, plus a chart of all pairs over time.
-          <span style="color:#3b82f6;font-weight:600;">Blue</span> = positive correlation,
-          <span style="color:#f97316;font-weight:600;">orange</span> = negative.
+          All 10 unique pairs. Cell <b>brightness</b> = strength of correlation
+          (|ρ|): white = strong, black = weak. The <b>signed value</b> printed
+          in each cell tells you direction (+ or −).
         </div>
         """,
         unsafe_allow_html=True,
@@ -701,20 +740,21 @@ def _render_correlations_panel(returns: pd.DataFrame):
             M[j, i] = v
 
     fig_mat = go.Figure(data=go.Heatmap(
-        z=M,
+        z=np.abs(M),
         x=[ASSET_LABELS[a] for a in ASSETS],
         y=[ASSET_LABELS[a] for a in ASSETS],
-        colorscale=DIVERGING_SCALE,
-        zmid=0, zmin=-1, zmax=1,
+        colorscale=GRAYSCALE_MAG,
+        zmin=0, zmax=1,
         text=[[f"{v:+.2f}" if not np.isnan(v) else "" for v in row] for row in M],
         texttemplate="%{text}",
-        textfont=dict(color="#fff", size=11, family="JetBrains Mono"),
+        textfont=dict(color="#fbbf24", size=11, family="JetBrains Mono"),
         colorbar=dict(
+            title=dict(text="|ρ|", font=dict(color=TEXT_DIM, size=10)),
             tickfont=dict(color=TEXT_DIM, size=9),
-            tickvals=[-1, -0.5, 0, 0.5, 1],
+            tickvals=[0, 0.25, 0.5, 0.75, 1.0],
             len=0.85, thickness=10,
         ),
-        hovertemplate="%{y} vs %{x}<br>ρ = %{z:.3f}<extra></extra>",
+        hovertemplate="%{y} vs %{x}<br>ρ = %{text}<extra></extra>",
     ))
     fig_mat.update_layout(
         **{**DARK_LAYOUT,
