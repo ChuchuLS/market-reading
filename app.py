@@ -16,7 +16,7 @@ from rates_complex.view import render_rates_complex
 from credit_complex.view import render_credit_complex
 from fx_complex.view import render_fx_complex
 from equity_complex.view import render_equity_complex
-from commodities_complex.view import render_commodities_complex
+from comdty_complex.view import render_commodities_complex
 
 st.set_page_config(
     page_title="Market Reading",
