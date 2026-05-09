@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from commodities_complex.analytics import (
+from comdty_complex.analytics import (
     ASSETS, ASSET_LABELS, LOAD_COLS, leadership_stats,
 )
 
