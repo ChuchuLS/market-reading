@@ -63,14 +63,16 @@ ASSET_COLOR = {
     "S1":   "#06b6d4",
 }
 
-# Substring -> canonical name. 'S 1 Comdty' upper-no-space → S1COMDTY contains 'S1'
-SUBSTRING_MAP = [
-    (("BCOM",),    "BCOM"),
-    (("CL1",),     "CL1"),
-    (("HG1",),     "HG1"),
-    (("GC1",),     "GC1"),
-    (("S1COMDTY", "S1"),  "S1"),
-]
+# Exact (upper, no-space) full-column-name -> canonical asset key.
+# Substring matching is unsafe here: 'JYBSS12M Curncy' de-spaced contains 'S1',
+# which previously silently captured the S1 (soy) slot. Match the whole token.
+EXACT_MAP = {
+    "BCOMINDEX":  "BCOM",
+    "CL1COMDTY":  "CL1",
+    "HG1COMDTY":  "HG1",
+    "GC1COMDTY":  "GC1",
+    "S1COMDTY":   "S1",   # 'S 1 Comdty' upper-no-space → 'S1COMDTY'
+}
 
 
 @st.cache_data(show_spinner=False)
@@ -102,7 +104,6 @@ def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
     raw = raw.rename(columns={date_col: "Date"})
 
     rename_map = {}
-    used_targets = set()
     for c in raw.columns:
         if c == "Date":
             continue
@@ -114,13 +115,8 @@ def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
         if numeric_share < 0.5:
             continue
         cu = str(c).upper().replace(" ", "")
-        for substrs, target in SUBSTRING_MAP:
-            if target in used_targets:
-                continue
-            if any(s.upper().replace(" ", "") in cu for s in substrs):
-                rename_map[c] = target
-                used_targets.add(target)
-                break
+        if cu in EXACT_MAP:
+            rename_map[c] = EXACT_MAP[cu]
     raw = raw.rename(columns=rename_map)
 
     needed = ASSETS
