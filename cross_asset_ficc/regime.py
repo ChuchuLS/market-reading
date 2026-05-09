@@ -33,19 +33,23 @@ LOADING_MAGNITUDE_THRESHOLD = 0.30   # leader's |loading|
 EXP_VAR_THRESHOLD = 0.45             # 5 assets: lower than 3-asset 0.60 is fine
 PERSISTENCE_THRESHOLD = 0.85         # day-over-day cosine for "Transitioning"
 
-# Asset color palette — keep visually consistent with cross_asset/view.py
+# Leader color palette — colorblind-safe (no red/green pairings).
+# Distinguishable under deuteranopia, protanopia, and tritanopia by varying
+# both hue and lightness.
 LEADER_COLOR = {
-    "SPX":      "#84cc16",   # lime
-    "USGG10YR": "#06b6d4",   # cyan
-    "DXY":      "#fb923c",   # amber
-    "BCOM":     "#a855f7",   # purple — new
-    "LF98OAS":  "#ec4899",   # magenta — new
+    "SPX":      "#3b82f6",   # blue
+    "USGG10YR": "#06b6d4",   # cyan (distinguishable from blue by saturation)
+    "DXY":      "#f97316",   # orange
+    "BCOM":     "#a855f7",   # purple
+    "LF98OAS":  "#facc15",   # yellow (distinct from orange by lightness)
 }
 
-# Special-state colors
+# Special-state colors — also colorblind-safe.
+# Mixed is gray (achromatic), Transitioning is white (high-contrast against
+# the dark theme; distinct from all leader hues).
 SPECIAL_COLOR = {
-    "Mixed":         "#525252",   # gray
-    "Transitioning": "#f97316",   # orange
+    "Mixed":         "#525252",   # gray (achromatic — universally readable)
+    "Transitioning": "#e5e7eb",   # near-white (distinct from all leader colors)
 }
 
 
