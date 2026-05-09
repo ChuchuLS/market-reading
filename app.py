@@ -5,10 +5,10 @@ Top-level tabs:
   - Macro Tracker: BQL cross-asset performance (themes + commodities)
   - Stock Heatmap: TradingView-style treemap of US index constituents
   - Cross-Asset: unified group with sub-tabs:
-      · 3-Asset Classic (SPX / UST 10Y / DXY, 8-bucket regime cube)
-      · FICC (5-asset, SPX / UST 10Y / DXY / BCOM / HY OAS)
-      · Rates (5 sub-components: 10Y / 2s10s / 10Y BE / 10Y Real / MOVE)
-      · Credit (TBD)
+      · 3-Asset Classic (SPX / UST 10Y / DXY)
+      · FICC (5-asset)
+      · Rates (10Y / 2s10s / 10Y BE / 10Y Real / MOVE)
+      · Credit (US HY / US IG / EU iTraxx)
       · FX (TBD)
       · Equity (TBD)
       · Commodities (TBD)
@@ -25,9 +25,10 @@ from stock_heatmap.view import render_stock_heatmap
 from cross_asset.view import render_cross_asset
 from cross_asset_ficc.view import render_cross_asset_ficc
 from rates_complex.view import render_rates_complex
+from credit_complex.view import render_credit_complex
 
 # ---------------------------------------------------------------------------
-# Page config — must be the first Streamlit call
+# Page config
 # ---------------------------------------------------------------------------
 st.set_page_config(
     page_title="Market Reading",
@@ -57,7 +58,7 @@ Unified Cross-Asset Dashboard
     )
 
 # ---------------------------------------------------------------------------
-# Top-level horizontal tabs
+# Top-level tabs
 # ---------------------------------------------------------------------------
 top_tab_macro, top_tab_stocks, top_tab_xasset = st.tabs([
     "📊 Macro Tracker",
@@ -72,13 +73,11 @@ with top_tab_stocks:
     render_stock_heatmap()
 
 with top_tab_xasset:
-    # Cross-Asset group — all PCA-based views nested here.
-    # Order: top-level layers first (Classic 3-asset, FICC 5-asset),
-    # then within-complex drill-downs.
-    sub_classic, sub_ficc, sub_rates = st.tabs([
+    sub_classic, sub_ficc, sub_rates, sub_credit = st.tabs([
         "3-Asset Classic",
         "FICC (5-asset)",
         "Rates",
+        "Credit",
     ])
 
     with sub_classic:
@@ -89,3 +88,6 @@ with top_tab_xasset:
 
     with sub_rates:
         render_rates_complex()
+
+    with sub_credit:
+        render_credit_complex()
