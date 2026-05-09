@@ -63,15 +63,13 @@ ASSET_COLOR = {
     "S1":   "#06b6d4",
 }
 
-# Substring -> canonical name. Note: 'S 1 Comdty' has a space, so we match
-# via an unambiguous substring. Stripping whitespace from headers for
-# the comparison handles 'S 1 Comdty' → 'S1COMDTY' which contains 'S1'.
+# Substring -> canonical name. 'S 1 Comdty' upper-no-space → S1COMDTY contains 'S1'
 SUBSTRING_MAP = [
     (("BCOM",),    "BCOM"),
     (("CL1",),     "CL1"),
     (("HG1",),     "HG1"),
     (("GC1",),     "GC1"),
-    (("S1COMDTY", "S1 ", "S 1"),  "S1"),  # try multiple forms; 'S 1 Comdty' upper-no-space → S1COMDTY
+    (("S1COMDTY", "S1"),  "S1"),
 ]
 
 
@@ -119,7 +117,6 @@ def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
         for substrs, target in SUBSTRING_MAP:
             if target in used_targets:
                 continue
-            # Normalize substrings the same way (uppercase, spaces removed)
             if any(s.upper().replace(" ", "") in cu for s in substrs):
                 rename_map[c] = target
                 used_targets.add(target)
@@ -363,7 +360,6 @@ def _render_headline_diagnostic(returns: pd.DataFrame):
 
 
 def _render_gold_copper_oil_panel(prices: pd.DataFrame):
-    """Gold/Copper ratio (fear-vs-growth) and Oil level."""
     gc = gold_copper_ratio(prices)
     oil = oil_summary(prices)
 
@@ -473,10 +469,10 @@ def _render_heatmap_panel(loadings: pd.DataFrame):
                     padding:0.75rem 1rem;font-size:11px;color:#ccc;line-height:1.6;
                     margin-bottom:1rem;">
           <span style="color:#fbbf24;font-weight:600;">What this shows:</span>
-          5 rows. <b>+</b> = same direction as BCOM (broad commodity-up),
-          <b>−</b> = opposite. Watch for splits: gold flipping <b>−</b> while
-          others <b>+</b> = growth-on (gold underperforming); copper <b>−</b>
-          while energy <b>+</b> = supply-driven oil rally without growth confirmation.
+          5 rows. <b>+</b> = same direction as BCOM, <b>−</b> = opposite. Watch
+          for splits: gold flipping <b>−</b> while others <b>+</b> = growth-on
+          (gold underperforming); copper <b>−</b> while energy <b>+</b> =
+          supply-driven oil rally without growth confirmation.
         </div>
         """,
         unsafe_allow_html=True,
@@ -732,8 +728,8 @@ def _render_correlations_panel(returns: pd.DataFrame):
                     padding:0.75rem 1rem;font-size:11px;color:#ccc;line-height:1.6;
                     margin-bottom:1rem;">
           <span style="color:#fbbf24;font-weight:600;">What this shows:</span>
-          All 10 unique pairs. Watch Copper-Gold (most informative single pair —
-          growth vs fear) and Oil-Copper (energy vs metals — supply vs demand split).
+          All 10 unique pairs. Watch Copper-Gold (growth vs fear) and
+          Oil-Copper (energy vs metals — supply vs demand split).
         </div>
         """,
         unsafe_allow_html=True,
@@ -1291,4 +1287,30 @@ def _render_regime_panel(loadings: pd.DataFrame):
             f"</tr>"
         )
 
-    table_rows = "".join(_fmt_stats_row(r) for _, r in stats.iterr
+    table_rows = "".join(_fmt_stats_row(r) for _, r in stats.iterrows())
+    st.markdown(
+        f"""
+        <table style='width:100%;border-collapse:collapse;font-size:12px;color:#ccc;
+                      border:1px solid #1a1a1a;'>
+          <thead>
+            <tr style='background:#0f0f0f;border-bottom:1px solid #2a2a2a;'>
+              <th style='padding:8px 10px;text-align:left;font-weight:600;color:#fbbf24;'>REGIME</th>
+              <th style='padding:8px 10px;text-align:right;font-weight:600;color:#fbbf24;'>DAYS</th>
+              <th style='padding:8px 10px;text-align:right;font-weight:600;color:#fbbf24;'>%</th>
+              <th style='padding:8px 10px;text-align:right;font-weight:600;color:#fbbf24;'>RUNS</th>
+              <th style='padding:8px 10px;text-align:right;font-weight:600;color:#fbbf24;'>AVG RUN</th>
+              <th style='padding:8px 10px;text-align:right;font-weight:600;color:#fbbf24;'>MAX RUN</th>
+              <th style='padding:8px 10px;text-align:left;font-weight:600;color:#fbbf24;'>LAST ENTRY</th>
+            </tr>
+          </thead>
+          <tbody>{table_rows}</tbody>
+        </table>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.caption(
+        f"Active = currently in this regime (blue dot). · "
+        f"Pct = % of {len(regimes)} classified days. · "
+        f"Regime engine: {__REGIME_VERSION__}"
+    )
