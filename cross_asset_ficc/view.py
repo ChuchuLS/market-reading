@@ -10,7 +10,9 @@ Three sub-tabs:
   3. Correlations & Theme — 10 pairwise + leadership decomposition
   4. Regime — continuous regime label + transitions
 
-Aesthetic matches cross_asset/view.py (OFR-inspired, dark, amber/cyan/magenta).
+Color palette: colorblind-safe blue/orange diverging scheme throughout.
+Blue  = positive PC1 loading / positive correlation / "same side as SPX".
+Orange = negative PC1 loading / negative correlation / "opposite SPX".
 """
 
 from __future__ import annotations
@@ -45,14 +47,45 @@ from cross_asset_ficc.regime import (
 
 DATA_PATH = Path(__file__).parent / "data" / "FICCREADING.xlsx"
 
-# Asset color palette — matches cross_asset/view.py for the original 3,
-# plus purple/magenta for BCOM/HY
+# ---------------------------------------------------------------------------
+# Color palette — colorblind-safe (blue/orange diverging)
+# ---------------------------------------------------------------------------
+# Diverging palette for sign-of-loading and sign-of-correlation.
+# Blue end = positive (same side as SPX, positive correlation).
+# Orange end = negative (opposite side, negative correlation).
+# Both colors remain distinguishable under deuteranopia, protanopia, and
+# tritanopia. Avoid red/green pairings entirely.
+COLOR_POS_DARK    = "#1e3a8a"   # deep blue (strongest positive)
+COLOR_POS_BRIGHT  = "#3b82f6"   # mid blue
+COLOR_POS_LIGHT   = "#93c5fd"   # light blue
+COLOR_NEG_DARK    = "#9a3412"   # deep orange
+COLOR_NEG_BRIGHT  = "#f97316"   # mid orange
+COLOR_NEG_LIGHT   = "#fdba74"   # light orange
+COLOR_NEUTRAL     = "#1a1a1a"   # near-black (zero / dark center)
+
+# Diverging colorscales for heatmaps (Plotly format: list of [pos, color])
+DIVERGING_SCALE = [
+    [0.0, COLOR_NEG_BRIGHT],
+    [0.5, COLOR_NEUTRAL],
+    [1.0, COLOR_POS_BRIGHT],
+]
+
+# Sequential blue scale for one-dimensional severity (used in transitions log
+# for rotation magnitude — severity is one-dimensional so we use a single hue
+# rather than a diverging scale).
+SEVERITY_LIGHT  = "#bfdbfe"   # very light blue (mild)
+SEVERITY_MILD   = "#60a5fa"   # blue
+SEVERITY_STRONG = "#2563eb"   # strong blue
+SEVERITY_MAX    = "#1e40af"   # very dark blue (severe)
+
+# Per-asset accent colors. Kept distinct in hue AND brightness so they remain
+# distinguishable under common forms of colorblindness. No red/green pairing.
 ASSET_COLOR = {
-    "SPX":      "#84cc16",   # lime
-    "USGG10YR": "#06b6d4",   # cyan
-    "DXY":      "#fb923c",   # amber
+    "SPX":      "#3b82f6",   # blue
+    "USGG10YR": "#06b6d4",   # cyan (distinguishable from blue by saturation)
+    "DXY":      "#f97316",   # orange
     "BCOM":     "#a855f7",   # purple
-    "LF98OAS":  "#ec4899",   # magenta
+    "LF98OAS":  "#facc15",   # yellow (distinct from orange by lightness)
 }
 
 # Substring -> canonical column name. Match logic lifted from cross_asset/view.py
@@ -68,10 +101,7 @@ SUBSTRING_MAP = [
 
 @st.cache_data(show_spinner=False)
 def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
-    """Read FICCREADING.xlsx and return clean prices DataFrame indexed by Date.
-
-    Same robustness pattern as cross_asset/view.load_prices, extended to 5 assets.
-    """
+    """Read FICCREADING.xlsx and return clean prices DataFrame indexed by Date."""
     raw = pd.read_excel(path)
 
     # ---- Identify Date column ------------------------------------------
@@ -123,7 +153,7 @@ def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
                 break
     raw = raw.rename(columns=rename_map)
 
-    needed = ASSETS  # ["SPX","USGG10YR","DXY","BCOM","LF98OAS"]
+    needed = ASSETS
     missing = [c for c in needed if c not in raw.columns]
     if missing:
         raise ValueError(
@@ -138,7 +168,6 @@ def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df = df.dropna(subset=needed)
 
-    # Drop weekends (BQL exports include Sat/Sun ffill rows)
     df["_dow"] = df["Date"].dt.dayofweek
     df = df[df["_dow"] < 5].drop(columns="_dow")
 
@@ -195,8 +224,7 @@ def render_cross_asset_ficc():
     )
 
     # -------------------------------------------------------------------
-    # Methodology controls (presets + return scaling, mirrored from
-    # cross_asset/view.py but with separate session keys for FICC).
+    # Methodology controls
     # -------------------------------------------------------------------
     st.markdown(
         """
@@ -254,11 +282,6 @@ def render_cross_asset_ficc():
             }[x],
             key="ficc_scaling",
             horizontal=True,
-            help=(
-                "Z-score uses each window's own mean/std (correlation matrix). "
-                "Vol-scale divides each return by trailing realized vol — "
-                "preserves cross-window magnitude comparability."
-            ),
         )
     with tbc2:
         st.markdown("<div style='font-size:10px;color:transparent;'>spacer</div>",
@@ -296,26 +319,20 @@ def render_cross_asset_ficc():
         f"⚙ Analytics: {__ANALYTICS_VERSION__}"
     )
 
-    # Compute returns
     returns = compute_returns(prices, vol_scale=(scaling == "volscale"))
 
-    # Strict zero-row filter (parallel to 3-asset version)
     n_before = len(returns)
     nonzero_mask = (returns != 0).all(axis=1)
     returns = returns[nonzero_mask]
     n_dropped = n_before - len(returns)
     if n_dropped > 0:
         st.caption(
-            f"⚠ Strict filter dropped {n_dropped} stale-data rows "
-            f"(days where at least one asset had zero return — typically "
-            f"holidays). {len(returns)} valid trading days used."
+            f"⚠ Strict filter dropped {n_dropped} stale-data rows. "
+            f"{len(returns)} valid trading days used."
         )
 
     st.markdown("---")
 
-    # -------------------------------------------------------------------
-    # Sub-tabs
-    # -------------------------------------------------------------------
     tab_heatmap, tab_drill, tab_corr, tab_regime = st.tabs([
         "🔥 Heatmap",
         "📈 Drill-down",
@@ -323,7 +340,6 @@ def render_cross_asset_ficc():
         "🔬 Regime",
     ])
 
-    # The Heatmap and Drill-down tabs share the same loadings DataFrame
     loadings = rolling_pca_loadings(
         returns,
         window=pca_window,
@@ -353,11 +369,6 @@ def render_cross_asset_ficc():
 # Tab 1: Heatmap (primary view)
 # ---------------------------------------------------------------------------
 def _render_heatmap_panel(loadings: pd.DataFrame, returns: pd.DataFrame):
-    """
-    Heatmap with 5 rows (one per asset) × time on x-axis.
-    Color hue = sign of loading vs SPX (green = same side as SPX, red = opposite).
-    Color intensity = |loading|.
-    """
     st.markdown(
         """
         <div style="font-size:14px;font-weight:700;letter-spacing:0.06em;color:#fbbf24;
@@ -370,11 +381,10 @@ def _render_heatmap_panel(loadings: pd.DataFrame, returns: pd.DataFrame):
           <span style="color:#fbbf24;font-weight:600;">What this shows:</span>
           5 rows, one per asset. Each cell's <b>intensity</b> = how much that asset
           is participating in the dominant theme on that day (|PC1 loading|).
-          <span style="color:#84cc16;font-weight:600;">Green</span> = same side as SPX.
-          <span style="color:#f87171;font-weight:600;">Red</span> = opposite side of SPX.
+          <span style="color:#3b82f6;font-weight:600;">Blue</span> = same side as SPX
+          (positive PC1 loading). <span style="color:#f97316;font-weight:600;">Orange</span>
+          = opposite side of SPX (negative loading).
           Regimes appear as <b>vertical bands</b> of consistent color and intensity.
-          A column where one row is much darker than the others is a single-asset-led
-          regime; columns with similar intensity across rows are diffuse co-movement.
         </div>
         """,
         unsafe_allow_html=True,
@@ -384,31 +394,13 @@ def _render_heatmap_panel(loadings: pd.DataFrame, returns: pd.DataFrame):
         st.warning("Not enough data to compute loadings yet.")
         return
 
-    # ---- Build the heatmap matrix --------------------------------------
-    # Z = signed loading. Hue mapped via custom diverging colorscale.
-    # Rows in display order (SPX first, then others).
     Z = np.array([loadings[f"{a}_load"].values for a in ASSETS])
-
-    # Custom diverging colorscale: red (negative) -> dark (zero) -> green (positive)
-    colorscale = [
-        [0.00, "#7f1d1d"],   # deep red
-        [0.25, "#dc2626"],
-        [0.50, "#0a0a0a"],   # dark center for near-zero
-        [0.75, "#65a30d"],
-        [1.00, "#1a2e05"],   # we'll override with green saturation
-    ]
-    # Use a cleaner 3-stop diverging scale
-    colorscale = [
-        [0.0, "#dc2626"],
-        [0.5, "#1a1a1a"],
-        [1.0, "#84cc16"],
-    ]
 
     fig = go.Figure(data=go.Heatmap(
         z=Z,
         x=loadings.index,
         y=[ASSET_LABELS[a] for a in ASSETS],
-        colorscale=colorscale,
+        colorscale=DIVERGING_SCALE,
         zmid=0,
         zmin=-1, zmax=1,
         colorbar=dict(
@@ -433,13 +425,13 @@ def _render_heatmap_panel(loadings: pd.DataFrame, returns: pd.DataFrame):
            "yaxis": dict(
                showgrid=False,
                tickfont=dict(size=11, color=TEXT, family="JetBrains Mono"),
-               autorange="reversed",  # SPX on top
+               autorange="reversed",
            ),
         }
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    # ---- Below: explained variance strip + leadership concentration ----
+    # ---- Aux strip: explained variance + concentration ----
     fig_aux = make_subplots(
         rows=2, cols=1, shared_xaxes=True,
         vertical_spacing=0.10,
@@ -447,7 +439,6 @@ def _render_heatmap_panel(loadings: pd.DataFrame, returns: pd.DataFrame):
         subplot_titles=("PC1 explained variance", "Leadership concentration"),
     )
 
-    # Explained variance line
     fig_aux.add_trace(
         go.Scatter(
             x=loadings.index, y=loadings["ExplainedVar"],
@@ -457,7 +448,6 @@ def _render_heatmap_panel(loadings: pd.DataFrame, returns: pd.DataFrame):
             name="ExplainedVar", showlegend=False,
         ), row=1, col=1)
 
-    # Concentration line (max(load^2)/sum(load^2))
     lead = leadership_stats(loadings)
     fig_aux.add_trace(
         go.Scatter(
@@ -468,7 +458,6 @@ def _render_heatmap_panel(loadings: pd.DataFrame, returns: pd.DataFrame):
             name="Concentration", showlegend=False,
         ), row=2, col=1)
 
-    # Reference lines: 0.20 floor for concentration (5-asset diffuse), 0.5 marker
     fig_aux.add_hline(y=0.20, line=dict(color="rgba(255,255,255,0.25)", dash="dot",
                                         width=1), row=2, col=1,
                       annotation_text="diffuse floor (0.20)",
@@ -493,7 +482,6 @@ def _render_heatmap_panel(loadings: pd.DataFrame, returns: pd.DataFrame):
                          showgrid=True, gridcolor=GRID,
                          tickfont=dict(size=9, color=TEXT_DIM),
                          tickformat=".0%")
-    # Subtitle styling
     for ann in fig_aux["layout"]["annotations"]:
         ann["font"] = dict(size=10, color="#fbbf24")
 
@@ -501,10 +489,9 @@ def _render_heatmap_panel(loadings: pd.DataFrame, returns: pd.DataFrame):
                     config={"displayModeBar": False})
 
     st.caption(
-        "Top: how much variance the dominant theme is explaining. Low → no single theme is "
-        "running the show. Bottom: how concentrated leadership is. 0.20 = perfectly diffuse "
-        "(all 5 assets contribute equally); 1.0 = pure single-asset move. "
-        "A regime is well-defined when both lines are high."
+        "Top: how much variance the dominant theme is explaining. Low → no single theme. "
+        "Bottom: how concentrated leadership is. 0.20 = perfectly diffuse "
+        "(all 5 assets equal); 1.0 = pure single-asset move."
     )
 
 
@@ -512,10 +499,6 @@ def _render_heatmap_panel(loadings: pd.DataFrame, returns: pd.DataFrame):
 # Tab 2: Drill-down — small multiples
 # ---------------------------------------------------------------------------
 def _render_drilldown_panel(loadings: pd.DataFrame):
-    """
-    5 small-multiple line charts (one per asset) showing |PC1 loading| over time,
-    plus the explained-variance line on top. Date range selector to focus a window.
-    """
     st.markdown(
         """
         <div style="font-size:14px;font-weight:700;letter-spacing:0.06em;color:#fbbf24;
@@ -526,9 +509,11 @@ def _render_drilldown_panel(loadings: pd.DataFrame):
                     padding:0.75rem 1rem;font-size:11px;color:#ccc;line-height:1.6;
                     margin-bottom:1rem;">
           <span style="color:#fbbf24;font-weight:600;">What this shows:</span>
-          One panel per asset, |loading| on a shared 0–1 axis. Confirms that a
+          One panel per asset, |loading| on a shared 0–1 axis. Confirms whether a
           band you spotted in the heatmap is real and stable, not just one
-          volatile day. Use the date range to zoom into a specific period.
+          volatile day.
+          <span style="color:#3b82f6;font-weight:600;">Blue</span> = same side as SPX,
+          <span style="color:#f97316;font-weight:600;">orange</span> = opposite SPX.
         </div>
         """,
         unsafe_allow_html=True,
@@ -538,7 +523,6 @@ def _render_drilldown_panel(loadings: pd.DataFrame):
         st.warning("Not enough data.")
         return
 
-    # ---- Date range selector ------------------------------------------
     full_min = loadings.index.min().date()
     full_max = loadings.index.max().date()
     default_min = max(full_min, (loadings.index.max() - pd.Timedelta(days=365)).date())
@@ -568,7 +552,6 @@ def _render_drilldown_panel(loadings: pd.DataFrame):
         st.warning("No data in selected range.")
         return
 
-    # ---- Small multiples ----------------------------------------------
     fig = make_subplots(
         rows=6, cols=1, shared_xaxes=True,
         vertical_spacing=0.025,
@@ -582,21 +565,20 @@ def _render_drilldown_panel(loadings: pd.DataFrame):
         load_col = f"{asset}_load"
         abs_load = sub[load_col].abs()
         signed_load = sub[load_col]
-        # Plot |loading| as a filled area, color by sign-vs-SPX (green if same
-        # side as SPX, red if opposite). For SPX itself, always green.
+
         if asset == "SPX":
-            color = ASSET_COLOR["SPX"]
+            # SPX is always blue (anchored positive)
             fig.add_trace(
                 go.Scatter(
                     x=sub.index, y=abs_load.values,
-                    mode="lines", line=dict(color=color, width=1.4),
-                    fill="tozeroy", fillcolor="rgba(132,204,22,0.18)",
+                    mode="lines", line=dict(color=COLOR_POS_BRIGHT, width=1.4),
+                    fill="tozeroy", fillcolor="rgba(59,130,246,0.20)",
                     hovertemplate=f"<b>{ASSET_LABELS[asset]}</b><br>"
                                   "%{x|%Y-%m-%d}<br>|load| = %{y:.3f}<extra></extra>",
                     showlegend=False,
                 ), row=i + 1, col=1)
         else:
-            # Signed-vs-SPX coloring: split into two traces for clean fill
+            # Split blue (same side as SPX) vs orange (opposite)
             spx_sign = np.sign(sub["SPX_load"].values)
             asset_sign = np.sign(signed_load.values)
             same_side = (spx_sign == asset_sign).astype(float)
@@ -606,8 +588,8 @@ def _render_drilldown_panel(loadings: pd.DataFrame):
             fig.add_trace(
                 go.Scatter(
                     x=sub.index, y=same_y,
-                    mode="lines", line=dict(color="#84cc16", width=1.2),
-                    fill="tozeroy", fillcolor="rgba(132,204,22,0.18)",
+                    mode="lines", line=dict(color=COLOR_POS_BRIGHT, width=1.2),
+                    fill="tozeroy", fillcolor="rgba(59,130,246,0.20)",
                     name=ASSET_LABELS[asset], showlegend=False,
                     hovertemplate=f"<b>{ASSET_LABELS[asset]}</b> (same side as SPX)"
                                   "<br>%{x|%Y-%m-%d}<br>|load| = %{y:.3f}<extra></extra>",
@@ -615,14 +597,13 @@ def _render_drilldown_panel(loadings: pd.DataFrame):
             fig.add_trace(
                 go.Scatter(
                     x=sub.index, y=opp_y,
-                    mode="lines", line=dict(color="#f87171", width=1.2),
-                    fill="tozeroy", fillcolor="rgba(248,113,113,0.18)",
+                    mode="lines", line=dict(color=COLOR_NEG_BRIGHT, width=1.2),
+                    fill="tozeroy", fillcolor="rgba(249,115,22,0.20)",
                     name=ASSET_LABELS[asset], showlegend=False,
                     hovertemplate=f"<b>{ASSET_LABELS[asset]}</b> (opposite SPX)"
                                   "<br>%{x|%Y-%m-%d}<br>|load| = %{y:.3f}<extra></extra>",
                 ), row=i + 1, col=1)
 
-    # Explained variance row
     fig.add_trace(
         go.Scatter(
             x=sub.index, y=sub["ExplainedVar"].values,
@@ -659,8 +640,8 @@ def _render_drilldown_panel(loadings: pd.DataFrame):
 
     st.caption(
         f"Selected range: {d_start} → {d_end} · {len(sub)} days · "
-        "Green fill = asset on same side of PC1 as SPX · "
-        "Red fill = asset on opposite side."
+        "Blue fill = asset on same side of PC1 as SPX · "
+        "Orange fill = opposite side."
     )
 
 
@@ -679,7 +660,9 @@ def _render_correlations_panel(returns: pd.DataFrame):
                     margin-bottom:1rem;">
           <span style="color:#fbbf24;font-weight:600;">What this shows:</span>
           All 10 unique pairs from the 5-asset basket. Today's correlations as a
-          heatmap matrix, plus a chart of the most informative time series.
+          matrix, plus a chart of all pairs over time.
+          <span style="color:#3b82f6;font-weight:600;">Blue</span> = positive correlation,
+          <span style="color:#f97316;font-weight:600;">orange</span> = negative.
         </div>
         """,
         unsafe_allow_html=True,
@@ -706,7 +689,6 @@ def _render_correlations_panel(returns: pd.DataFrame):
 
     latest = latest_pairwise_corrs(returns, window=window, weighting=weighting)
 
-    # ---- Today's correlation matrix as a heatmap ----------------------
     n = len(ASSETS)
     M = np.full((n, n), np.nan)
     for i in range(n):
@@ -722,7 +704,7 @@ def _render_correlations_panel(returns: pd.DataFrame):
         z=M,
         x=[ASSET_LABELS[a] for a in ASSETS],
         y=[ASSET_LABELS[a] for a in ASSETS],
-        colorscale=[[0, "#dc2626"], [0.5, "#1a1a1a"], [1, "#84cc16"]],
+        colorscale=DIVERGING_SCALE,
         zmid=0, zmin=-1, zmax=1,
         text=[[f"{v:+.2f}" if not np.isnan(v) else "" for v in row] for row in M],
         texttemplate="%{text}",
@@ -746,13 +728,21 @@ def _render_correlations_panel(returns: pd.DataFrame):
     st.plotly_chart(fig_mat, use_container_width=True,
                     config={"displayModeBar": False})
 
-    # ---- Rolling time series of all 10 pairs --------------------------
     rolled = rolling_pairwise_corrs(returns, window=window, weighting=weighting)
 
-    # Build a curated palette across 10 pairs
+    # Colorblind-safe palette for 10 pairs: vary hue AND lightness so they
+    # remain distinguishable. Avoid red/green pairs.
     PAIR_PALETTE = [
-        "#84cc16", "#06b6d4", "#fb923c", "#a855f7", "#ec4899",
-        "#fbbf24", "#10b981", "#3b82f6", "#f87171", "#94a3b8",
+        "#3b82f6",   # blue
+        "#06b6d4",   # cyan
+        "#f97316",   # orange
+        "#a855f7",   # purple
+        "#facc15",   # yellow
+        "#0ea5e9",   # sky blue
+        "#fb923c",   # light orange
+        "#7c3aed",   # violet
+        "#0891b2",   # teal
+        "#fcd34d",   # light yellow
     ]
 
     fig = go.Figure()
@@ -809,9 +799,8 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
                     margin-bottom:1rem;">
           <span style="color:#fbbf24;font-weight:600;">What this shows:</span>
           PC1 loadings for all 5 assets, the leader (largest |loading|),
-          and the concentration of leadership (max load² ÷ sum load²).
-          Concentration floor is 0.20 (perfectly diffuse 5-asset move),
-          ceiling is 1.0 (single-asset move).
+          and the concentration of leadership. Concentration floor is 0.20
+          (diffuse), ceiling 1.0 (single-asset move).
         </div>
         """,
         unsafe_allow_html=True,
@@ -859,7 +848,6 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
     explained = pca["explained_variance"]
     loadings_today = pca["loadings"]
 
-    # Today's leadership snapshot
     abs_loads = {a: abs(loadings_today.get(a, 0.0)) for a in ASSETS}
     leader = max(abs_loads, key=abs_loads.get)
     sq = {a: loadings_today.get(a, 0.0) ** 2 for a in ASSETS}
@@ -880,7 +868,6 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
         unsafe_allow_html=True,
     )
 
-    # 5 metric cards
     cols = st.columns(5)
     for col_widget, asset in zip(cols, ASSETS):
         load = loadings_today.get(asset, np.nan)
@@ -888,6 +875,8 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
         col_color = ASSET_COLOR[asset]
         with col_widget:
             sign = "+" if load >= 0 else ""
+            # Color the loading number by sign — blue if positive, orange if negative
+            load_color = COLOR_POS_BRIGHT if load >= 0 else COLOR_NEG_BRIGHT
             st.markdown(
                 f"""
                 <div style="text-align:center;padding:0.5rem 0;">
@@ -896,7 +885,7 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
                     {ASSET_LABELS[asset]}
                   </div>
                   <div style="font-size:20px;font-weight:700;
-                              font-family:'JetBrains Mono',monospace;color:#fff;">
+                              font-family:'JetBrains Mono',monospace;color:{load_color};">
                     {sign}{load:.2f}
                   </div>
                   <div style="font-size:9px;color:#888;letter-spacing:0.05em;">
@@ -907,7 +896,6 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
                 unsafe_allow_html=True,
             )
 
-    # ---- Rolling loadings chart (all 5 lines) -------------------------
     roll = rolling_pca_loadings(
         returns, window=window, weighting=weighting,
         pca_method=pca_method, presmooth_halflife=presmooth_halflife,
@@ -981,9 +969,6 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
 # Tab 4: Regime
 # ---------------------------------------------------------------------------
 def _render_regime_panel(loadings: pd.DataFrame):
-    """
-    Continuous regime characterization: leader + sign pattern.
-    """
     st.markdown(
         """
         <div style="font-size:14px;font-weight:700;letter-spacing:0.06em;color:#fbbf24;
@@ -1000,7 +985,7 @@ def _render_regime_panel(loadings: pd.DataFrame):
           or leader |loading| &lt; {mag:.2f}) are labeled
           <span style="color:#aaa;font-weight:600;">Mixed</span>.
           Days where day-over-day persistence drops below <b>{pers:.2f}</b> are labeled
-          <span style="color:#f97316;font-weight:600;">Transitioning</span>.
+          <span style="color:#facc15;font-weight:600;">Transitioning</span>.
         </div>
         """.format(var=EXP_VAR_THRESHOLD, mag=LOADING_MAGNITUDE_THRESHOLD,
                    pers=PERSISTENCE_THRESHOLD),
@@ -1016,9 +1001,7 @@ def _render_regime_panel(loadings: pd.DataFrame):
     regimes = apply_persistence_filter(raw_regimes, persistence)
     info = current_regime_info(regimes, loadings, persistence)
 
-    # ---- Headline card -----------------------------------------------
     if info:
-        # Persistence label
         if info["persistence"] is None:
             pers_str = "—"
             pers_label = ""
@@ -1032,9 +1015,9 @@ def _render_regime_panel(loadings: pd.DataFrame):
             elif p > 0.0:   pers_label = "rotating fast"
             else:           pers_label = "flipped"
 
-        # Build per-asset loading display
+        # Loading colors: blue if positive, orange if negative
         loadings_html = " · ".join(
-            f"{ASSET_LABELS[a]} <span style='color:{'#84cc16' if info['loadings'][a] >= 0 else '#f87171'};'>"
+            f"{ASSET_LABELS[a]} <span style='color:{COLOR_POS_BRIGHT if info['loadings'][a] >= 0 else COLOR_NEG_BRIGHT};'>"
             f"{'+' if info['loadings'][a] >= 0 else ''}{info['loadings'][a]:.2f}</span>"
             for a in ASSETS
         )
@@ -1082,7 +1065,6 @@ def _render_regime_panel(loadings: pd.DataFrame):
             unsafe_allow_html=True,
         )
 
-    # ---- Regime timeline stripe --------------------------------------
     st.markdown(
         """
         <div style="font-size:12px;font-weight:600;letter-spacing:0.06em;color:#fbbf24;
@@ -1127,7 +1109,6 @@ def _render_regime_panel(loadings: pd.DataFrame):
     st.plotly_chart(fig_stripe, use_container_width=True,
                     config={"displayModeBar": False})
 
-    # Leader legend (5 colors + 2 special states)
     legend_html = "<div style='display:flex;flex-wrap:wrap;gap:1rem;font-size:11px;color:#bbb;margin-bottom:1rem;'>"
     for asset in ASSETS:
         legend_html += (
@@ -1148,7 +1129,6 @@ def _render_regime_panel(loadings: pd.DataFrame):
     legend_html += "</div>"
     st.markdown(legend_html, unsafe_allow_html=True)
 
-    # ---- Persistence tracker -----------------------------------------
     st.markdown(
         """
         <div style="font-size:12px;font-weight:600;letter-spacing:0.06em;color:#fbbf24;
@@ -1167,16 +1147,17 @@ def _render_regime_panel(loadings: pd.DataFrame):
         name="Persistence",
         hovertemplate="%{x|%Y-%m-%d}<br>cos = %{y:.4f}<extra></extra>",
     ))
+    # Reference bands — using blue gradient (severity scale, not red/green)
     for y, label, color in [
-        (0.99, "very stable (≥0.99)", "rgba(132,204,22,0.25)"),
-        (0.95, "stable (≥0.95)",      "rgba(252,211,77,0.20)"),
-        (0.85, "drifting (≥0.85)",    "rgba(251,146,60,0.18)"),
+        (0.99, "very stable (≥0.99)", "rgba(147,197,253,0.30)"),
+        (0.95, "stable (≥0.95)",      "rgba(96,165,250,0.25)"),
+        (0.85, "drifting (≥0.85)",    "rgba(37,99,235,0.20)"),
     ]:
         fig_pers.add_hline(y=y, line=dict(color=color, dash="dot", width=1),
                            annotation_text=label, annotation_position="left",
                            annotation_font=dict(color=TEXT_DIM, size=9))
     fig_pers.add_hline(y=0,
-                       line=dict(color="rgba(248,113,113,0.3)", width=1, dash="dash"))
+                       line=dict(color="rgba(249,115,22,0.4)", width=1, dash="dash"))
 
     fig_pers.update_layout(
         **{**DARK_LAYOUT, "height": 220, "showlegend": False,
@@ -1191,7 +1172,6 @@ def _render_regime_panel(loadings: pd.DataFrame):
     st.plotly_chart(fig_pers, use_container_width=True,
                     config={"displayModeBar": False})
 
-    # ---- Recent transitions ------------------------------------------
     st.markdown(
         """
         <div style="font-size:12px;font-weight:600;letter-spacing:0.06em;color:#fbbf24;
@@ -1210,12 +1190,13 @@ def _render_regime_panel(loadings: pd.DataFrame):
             from_color = regime_color(row["From"])
             to_color = regime_color(row["To"])
             pers_str = f"{row['Persistence']:+.3f}" if row["Persistence"] is not None else "—"
+            # Severity color uses single-hue blue scale (severity is 1-D, not diverging)
             if row["Persistence"] is not None:
                 p = row["Persistence"]
-                if p < 0.0:    pers_color = "#dc2626"
-                elif p < 0.5:  pers_color = "#ef4444"
-                elif p < 0.85: pers_color = "#f97316"
-                else:          pers_color = "#84cc16"
+                if p < 0.0:    pers_color = SEVERITY_MAX     # full flip — darkest blue
+                elif p < 0.5:  pers_color = SEVERITY_STRONG  # major rotation
+                elif p < 0.85: pers_color = SEVERITY_MILD    # transition zone
+                else:          pers_color = SEVERITY_LIGHT   # mild
             else:
                 pers_color = "#888"
             return (
@@ -1259,7 +1240,6 @@ def _render_regime_panel(loadings: pd.DataFrame):
             unsafe_allow_html=True,
         )
 
-    # ---- Regime stats table -----------------------------------------
     st.markdown(
         """
         <div style="font-size:12px;font-weight:600;letter-spacing:0.06em;color:#fbbf24;
@@ -1276,7 +1256,7 @@ def _render_regime_panel(loadings: pd.DataFrame):
         return
 
     def _fmt_stats_row(row):
-        active_dot = ("<span style='color:#84cc16;'>●</span>"
+        active_dot = ("<span style='color:#3b82f6;'>●</span>"
                       if row["Active"] else "")
         return (
             f"<tr>"
@@ -1318,7 +1298,7 @@ def _render_regime_panel(loadings: pd.DataFrame):
     )
 
     st.caption(
-        f"Active = currently in this regime (green dot). · "
+        f"Active = currently in this regime (blue dot). · "
         f"Pct = % of {len(regimes)} classified days. · "
         f"Avg/Max Run = mean/longest consecutive days in this regime. · "
         f"Regime engine: {__REGIME_VERSION__}"
