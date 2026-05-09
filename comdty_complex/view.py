@@ -20,7 +20,7 @@ from plotly.subplots import make_subplots
 import streamlit as st
 
 from theming import BG, GRID, TEXT, TEXT_DIM, DARK_LAYOUT
-from commodities_complex.analytics import (
+from comdty_complex.analytics import (
     ASSETS, ASSET_LABELS, LOAD_COLS, ANCHOR,
     compute_returns,
     rolling_pairwise_corrs, latest_pairwise_corrs, all_pair_keys,
@@ -30,7 +30,7 @@ from commodities_complex.analytics import (
     loading_label, concentration_label,
     __ANALYTICS_VERSION__,
 )
-from commodities_complex.regime import (
+from comdty_complex.regime import (
     classify_loadings_series, cosine_persistence,
     apply_persistence_filter, transitions_log,
     regime_runs, regime_stats, current_regime_info,
