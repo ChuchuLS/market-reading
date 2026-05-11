@@ -124,8 +124,26 @@ CATEGORY_ORDER = CATEGORY_ORDER_ETF + CATEGORY_ORDER_COMDTY
 # ---------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def load_data(path: Path, _mtime: float) -> pd.DataFrame:
-    """Read DATA.xlsx and return tidy DataFrame keyed by ticker."""
+    """Read DATA.xlsx and return tidy DataFrame keyed by ticker.
+
+    Tolerates BQL output that includes an auto-added DATES column between
+    the ticker column and the metric columns.
+    """
     raw = pd.read_excel(path, sheet_name=SHEET_NAME)
+
+    # BQL =BQL(range, "metrics") output adds a DATES column between the
+    # ticker column and the metric columns. Detect and drop it so the
+    # loader works whether the user pasted output with or without it.
+    if len(raw.columns) >= 2:
+        second = raw.iloc[:, 1]
+        # Datetime dtype OR header literally named "DATES" → it's the BQL date column
+        is_dates_col = (
+            pd.api.types.is_datetime64_any_dtype(second)
+            or str(raw.columns[1]).strip().upper() == "DATES"
+        )
+        if is_dates_col:
+            raw = raw.drop(raw.columns[1], axis=1)
+
     raw = raw.iloc[:, :6].copy()
     raw.columns = ["Ticker", "1D", "1W", "1M", "3M", "YTD"]
     raw = raw.dropna(subset=["Ticker"]).reset_index(drop=True)
