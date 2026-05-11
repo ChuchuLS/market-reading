@@ -45,7 +45,8 @@ from cross_asset_ficc.regime import (
     __REGIME_VERSION__,
 )
 
-DATA_PATH = Path(__file__).parent / "data" / "FICCREADING.xlsx"
+DATA_PATH = Path(__file__).parent.parent / "data" / "MARKET_DATA.xlsx"
+SHEET_NAME = "ficc"
 
 # ---------------------------------------------------------------------------
 # Color palette — colorblind-safe (blue/orange diverging)
@@ -112,7 +113,7 @@ SUBSTRING_MAP = [
 @st.cache_data(show_spinner=False)
 def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
     """Read FICCREADING.xlsx and return clean prices DataFrame indexed by Date."""
-    raw = pd.read_excel(path)
+    raw = pd.read_excel(path, sheet_name=SHEET_NAME)
 
     # ---- Identify Date column ------------------------------------------
     cols = list(raw.columns)

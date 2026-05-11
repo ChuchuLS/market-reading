@@ -33,7 +33,8 @@ from cross_asset.regime import (
     __REGIME_VERSION__,
 )
 
-DATA_PATH = Path(__file__).parent / "data" / "CROSSASSET.xlsx"
+DATA_PATH = Path(__file__).parent.parent / "data" / "MARKET_DATA.xlsx"
+SHEET_NAME = "cross_asset"
 
 # OFR-inspired palette — amber/magenta/cyan/lime
 COLOR_SPX     = "#84cc16"   # lime
@@ -63,7 +64,7 @@ def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
       - Duplicate dates from BQL spilling
       - Column names like "SPX Index", "USGG10YR Index", "DXY Curncy"
     """
-    raw = pd.read_excel(path)
+    raw = pd.read_excel(path, sheet_name=SHEET_NAME)
 
     # ---- Step 1: identify the columns we care about -------------------
     # Find the date column. The robust trick: we want a column whose values

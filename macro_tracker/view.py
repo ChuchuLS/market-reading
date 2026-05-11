@@ -26,7 +26,8 @@ from theming import (
 # ---------------------------------------------------------------------------
 # Data file location — relative to this module
 # ---------------------------------------------------------------------------
-DATA_PATH = Path(__file__).parent / "data" / "DATA.xlsx"
+DATA_PATH = Path(__file__).parent.parent / "data" / "MARKET_DATA.xlsx"
+SHEET_NAME = "macro_tracker"
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +125,7 @@ CATEGORY_ORDER = CATEGORY_ORDER_ETF + CATEGORY_ORDER_COMDTY
 @st.cache_data(show_spinner=False)
 def load_data(path: Path, _mtime: float) -> pd.DataFrame:
     """Read DATA.xlsx and return tidy DataFrame keyed by ticker."""
-    raw = pd.read_excel(path)
+    raw = pd.read_excel(path, sheet_name=SHEET_NAME)
     raw = raw.iloc[:, :6].copy()
     raw.columns = ["Ticker", "1D", "1W", "1M", "3M", "YTD"]
     raw = raw.dropna(subset=["Ticker"]).reset_index(drop=True)

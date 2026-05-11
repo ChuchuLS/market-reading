@@ -39,7 +39,8 @@ from comdty_complex.regime import (
     __REGIME_VERSION__,
 )
 
-DATA_PATH = Path(__file__).parent.parent / "cross_asset_ficc" / "data" / "FICCREADING.xlsx"
+DATA_PATH = Path(__file__).parent.parent / "data" / "MARKET_DATA.xlsx"
+SHEET_NAME = "ficc"
 
 COLOR_POS_BRIGHT  = "#3b82f6"
 COLOR_NEG_BRIGHT  = "#f97316"
@@ -77,7 +78,7 @@ EXACT_MAP = {
 
 @st.cache_data(show_spinner=False)
 def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
-    raw = pd.read_excel(path)
+    raw = pd.read_excel(path, sheet_name=SHEET_NAME)
 
     cols = list(raw.columns)
     date_col = None
