@@ -17,6 +17,7 @@ from credit_complex.view import render_credit_complex
 from fx_complex.view import render_fx_complex
 from equity_complex.view import render_equity_complex
 from comdty_complex.view import render_commodities_complex
+from sector_complex.view import render_sector_complex
 
 st.set_page_config(
     page_title="Market Reading",
@@ -55,7 +56,7 @@ with top_tab_stocks:
     render_stock_heatmap()
 
 with top_tab_xasset:
-    sub_classic, sub_ficc, sub_rates, sub_credit, sub_fx, sub_equity, sub_comdty = st.tabs([
+    sub_classic, sub_ficc, sub_rates, sub_credit, sub_fx, sub_equity, sub_comdty, sub_sector = st.tabs([
         "3-Asset Classic",
         "FICC (5-asset)",
         "Rates",
@@ -63,6 +64,7 @@ with top_tab_xasset:
         "FX",
         "Equity",
         "Commodities",
+        "Sectors",
     ])
 
     with sub_classic:
@@ -85,3 +87,6 @@ with top_tab_xasset:
 
     with sub_comdty:
         render_commodities_complex()
+
+    with sub_sector:
+        render_sector_complex()
