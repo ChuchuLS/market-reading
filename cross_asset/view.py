@@ -33,8 +33,7 @@ from cross_asset.regime import (
     __REGIME_VERSION__,
 )
 
-DATA_PATH = Path(__file__).parent.parent / "data" / "MARKET_DATA.xlsx"
-SHEET_NAME = "cross_asset"
+DATA_PATH = Path(__file__).parent / "data" / "CROSSASSET.xlsx"
 
 # OFR-inspired palette — amber/magenta/cyan/lime
 COLOR_SPX     = "#84cc16"   # lime
@@ -64,7 +63,7 @@ def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
       - Duplicate dates from BQL spilling
       - Column names like "SPX Index", "USGG10YR Index", "DXY Curncy"
     """
-    raw = pd.read_excel(path, sheet_name=SHEET_NAME)
+    raw = pd.read_excel(path)
 
     # ---- Step 1: identify the columns we care about -------------------
     # Find the date column. The robust trick: we want a column whose values
@@ -914,12 +913,18 @@ def _render_regime_panel(returns: pd.DataFrame):
 
     # Build a Plotly heatmap-style stripe: one row, x-axis is date,
     # cells colored by regime.
+    # NOTE: horizontal bars on a date axis need a NUMERIC width (milliseconds),
+    # not a Timedelta — Plotly serializes Timedelta to an ISO duration string
+    # ("P32DT0H0M0S") that the renderer can't position, leaving the chart blank.
+    # We also use barmode="overlay" (not "stack") so each bar is positioned
+    # independently by its own `base` rather than stacking on the previous bar.
     fig_stripe = go.Figure()
     for _, run in runs.iterrows():
+        width_ms = (run["End"] - run["Start"] + pd.Timedelta(days=1)).total_seconds() * 1000.0
         fig_stripe.add_trace(go.Bar(
-            x=[run["End"] - run["Start"] + pd.Timedelta(days=1)],
+            x=[width_ms],
             y=["Regime"],
-            base=[run["Start"]],
+            base=run["Start"].isoformat(),
             orientation='h',
             marker=dict(color=BUCKET_COLOR[run["Regime"]],
                         line=dict(color=BG, width=0.5)),
@@ -934,7 +939,7 @@ def _render_regime_panel(returns: pd.DataFrame):
     fig_stripe.update_layout(
         **{**DARK_LAYOUT,
            "height": 90,
-           "barmode": "stack",
+           "barmode": "overlay",
            "showlegend": False,
            "margin": dict(l=10, r=10, t=10, b=30),
            "yaxis": dict(visible=False, fixedrange=True),
