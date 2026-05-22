@@ -1123,10 +1123,11 @@ def _render_regime_panel(loadings: pd.DataFrame):
 
     fig_stripe = go.Figure()
     for _, run in runs.iterrows():
+        width_ms = (run["End"] - run["Start"] + pd.Timedelta(days=1)).total_seconds() * 1000.0
         fig_stripe.add_trace(go.Bar(
-            x=[run["End"] - run["Start"] + pd.Timedelta(days=1)],
+            x=[width_ms],
             y=["Regime"],
-            base=[run["Start"]],
+            base=run["Start"].isoformat(),
             orientation="h",
             marker=dict(color=regime_color(run["Regime"]),
                         line=dict(color=BG, width=0.5)),
@@ -1140,7 +1141,7 @@ def _render_regime_panel(loadings: pd.DataFrame):
         ))
     fig_stripe.update_layout(
         **{**DARK_LAYOUT,
-           "height": 90, "barmode": "stack", "showlegend": False,
+           "height": 90, "barmode": "overlay", "showlegend": False,
            "margin": dict(l=10, r=10, t=10, b=30),
            "yaxis": dict(visible=False, fixedrange=True),
            "xaxis": dict(type="date", showgrid=False,
