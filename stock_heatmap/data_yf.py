@@ -15,37 +15,189 @@ from datetime import timedelta
 import pandas as pd
 import streamlit as st
 
-
 # ---------------------------------------------------------------------------
 # Index constituent lists (snapshots — drift over time but adequate)
 # ---------------------------------------------------------------------------
 DOW_30 = [
-    "AAPL", "AMGN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS",
-    "DOW", "GS", "HD", "HON", "IBM", "INTC", "JNJ", "JPM", "KO", "MCD",
-    "MMM", "MRK", "MSFT", "NKE", "PG", "TRV", "UNH", "V", "VZ", "WBA", "WMT",
+    "AAPL",
+    "AMGN",
+    "AXP",
+    "BA",
+    "CAT",
+    "CRM",
+    "CSCO",
+    "CVX",
+    "DIS",
+    "DOW",
+    "GS",
+    "HD",
+    "HON",
+    "IBM",
+    "INTC",
+    "JNJ",
+    "JPM",
+    "KO",
+    "MCD",
+    "MMM",
+    "MRK",
+    "MSFT",
+    "NKE",
+    "PG",
+    "TRV",
+    "UNH",
+    "V",
+    "VZ",
+    "WBA",
+    "WMT",
 ]
 
 NDX_100 = [
-    "AAPL", "MSFT", "AMZN", "NVDA", "GOOGL", "GOOG", "META", "TSLA", "AVGO",
-    "PEP", "COST", "ADBE", "CSCO", "CMCSA", "TMUS", "NFLX", "AMD", "INTC",
-    "INTU", "TXN", "QCOM", "AMGN", "HON", "AMAT", "ISRG", "BKNG", "VRTX",
-    "ADP", "GILD", "ADI", "MU", "REGN", "PANW", "LRCX", "MDLZ", "SBUX",
-    "KLAC", "PYPL", "SNPS", "MELI", "CDNS", "ABNB", "CRWD", "MAR", "ORLY",
-    "MNST", "FTNT", "ASML", "CSX", "PCAR", "ROP", "CHTR", "WDAY", "ADSK",
-    "NXPI", "DXCM", "PAYX", "AEP", "MRVL", "FANG", "ROST", "ODFL", "FAST",
-    "CTAS", "KDP", "EXC", "BKR", "TEAM", "CPRT", "VRSK", "EA", "DDOG",
-    "GEHC", "BIIB", "ON", "XEL", "CSGP", "IDXX", "ZS", "CCEP", "TTWO",
-    "DLTR", "ANSS", "MCHP", "WBD", "TTD", "CDW", "MDB", "DASH", "ILMN",
-    "WBA", "LULU", "ALGN",
+    "AAPL",
+    "MSFT",
+    "AMZN",
+    "NVDA",
+    "GOOGL",
+    "GOOG",
+    "META",
+    "TSLA",
+    "AVGO",
+    "PEP",
+    "COST",
+    "ADBE",
+    "CSCO",
+    "CMCSA",
+    "TMUS",
+    "NFLX",
+    "AMD",
+    "INTC",
+    "INTU",
+    "TXN",
+    "QCOM",
+    "AMGN",
+    "HON",
+    "AMAT",
+    "ISRG",
+    "BKNG",
+    "VRTX",
+    "ADP",
+    "GILD",
+    "ADI",
+    "MU",
+    "REGN",
+    "PANW",
+    "LRCX",
+    "MDLZ",
+    "SBUX",
+    "KLAC",
+    "PYPL",
+    "SNPS",
+    "MELI",
+    "CDNS",
+    "ABNB",
+    "CRWD",
+    "MAR",
+    "ORLY",
+    "MNST",
+    "FTNT",
+    "ASML",
+    "CSX",
+    "PCAR",
+    "ROP",
+    "CHTR",
+    "WDAY",
+    "ADSK",
+    "NXPI",
+    "DXCM",
+    "PAYX",
+    "AEP",
+    "MRVL",
+    "FANG",
+    "ROST",
+    "ODFL",
+    "FAST",
+    "CTAS",
+    "KDP",
+    "EXC",
+    "BKR",
+    "TEAM",
+    "CPRT",
+    "VRSK",
+    "EA",
+    "DDOG",
+    "GEHC",
+    "BIIB",
+    "ON",
+    "XEL",
+    "CSGP",
+    "IDXX",
+    "ZS",
+    "CCEP",
+    "TTWO",
+    "DLTR",
+    "ANSS",
+    "MCHP",
+    "WBD",
+    "TTD",
+    "CDW",
+    "MDB",
+    "DASH",
+    "ILMN",
+    "WBA",
+    "LULU",
+    "ALGN",
 ]
 
 RUSSELL_2000_PROXY = [
-    "SMCI", "MSTR", "FTAI", "RKLB", "FIX", "AIT", "SFM", "INSM", "MLI",
-    "ENSG", "CRS", "ANF", "CVLT", "CHX", "BMI", "KTB", "MUR", "RDN",
-    "WTS", "CHRD", "EME", "BOOT", "PI", "WERN", "TGNA", "DCI", "RGEN",
-    "SPSC", "PJT", "COKE", "ROAD", "AAON", "ESI", "ATKR", "ITRI", "MTH",
-    "MMSI", "LNTH", "TFIN", "AVAV", "ESNT", "CSWI", "EXLS", "WTFC", "FSS",
-    "WAFD", "BCC", "ALG", "OFG", "TPH",
+    "SMCI",
+    "MSTR",
+    "FTAI",
+    "RKLB",
+    "FIX",
+    "AIT",
+    "SFM",
+    "INSM",
+    "MLI",
+    "ENSG",
+    "CRS",
+    "ANF",
+    "CVLT",
+    "CHX",
+    "BMI",
+    "KTB",
+    "MUR",
+    "RDN",
+    "WTS",
+    "CHRD",
+    "EME",
+    "BOOT",
+    "PI",
+    "WERN",
+    "TGNA",
+    "DCI",
+    "RGEN",
+    "SPSC",
+    "PJT",
+    "COKE",
+    "ROAD",
+    "AAON",
+    "ESI",
+    "ATKR",
+    "ITRI",
+    "MTH",
+    "MMSI",
+    "LNTH",
+    "TFIN",
+    "AVAV",
+    "ESNT",
+    "CSWI",
+    "EXLS",
+    "WTFC",
+    "FSS",
+    "WAFD",
+    "BCC",
+    "ALG",
+    "OFG",
+    "TPH",
 ]
 
 
@@ -85,10 +237,14 @@ def get_ndx100_constituents() -> list[str]:
                         if 90 <= len(tickers) <= 110:  # sanity check
                             return sorted(set(tickers))
         # No suitable table — fall back
-        st.warning("Couldn't parse Nasdaq 100 table from Wikipedia. Using hardcoded snapshot.")
+        st.warning(
+            "Couldn't parse Nasdaq 100 table from Wikipedia. Using hardcoded snapshot."
+        )
         return NDX_100
     except Exception as e:
-        st.warning(f"Wikipedia Nasdaq 100 scrape failed: {e}. Using hardcoded snapshot.")
+        st.warning(
+            f"Wikipedia Nasdaq 100 scrape failed: {e}. Using hardcoded snapshot."
+        )
         return NDX_100
 
 
@@ -122,7 +278,7 @@ def fetch_prices(tickers: tuple[str, ...]) -> pd.DataFrame:
         return pd.DataFrame()
 
     CHUNK = 25
-    chunks = [list(tickers[i:i + CHUNK]) for i in range(0, len(tickers), CHUNK)]
+    chunks = [list(tickers[i : i + CHUNK]) for i in range(0, len(tickers), CHUNK)]
     frames = []
     errors = []
 
@@ -176,24 +332,34 @@ def fetch_fundamentals(tickers: tuple[str, ...]) -> pd.DataFrame:
     import yfinance as yf
 
     rows = []
-    progress = st.progress(0.0, text=f"Fetching fundamentals for {len(tickers)} tickers…")
+    progress = st.progress(
+        0.0, text=f"Fetching fundamentals for {len(tickers)} tickers…"
+    )
     n = len(tickers)
     for i, t in enumerate(tickers):
         try:
             info = yf.Ticker(t).info or {}
-            rows.append({
-                "Ticker": t,
-                "Name": info.get("shortName") or info.get("longName") or t,
-                "Sector": info.get("sector") or "Unknown",
-                "Industry": info.get("industry") or "Unknown",
-                "MarketCap": info.get("marketCap") or 0,
-                "AvgVolume": info.get("averageVolume") or 0,
-            })
+            rows.append(
+                {
+                    "Ticker": t,
+                    "Name": info.get("shortName") or info.get("longName") or t,
+                    "Sector": info.get("sector") or "Unknown",
+                    "Industry": info.get("industry") or "Unknown",
+                    "MarketCap": info.get("marketCap") or 0,
+                    "AvgVolume": info.get("averageVolume") or 0,
+                }
+            )
         except Exception:
-            rows.append({
-                "Ticker": t, "Name": t, "Sector": "Unknown",
-                "Industry": "Unknown", "MarketCap": 0, "AvgVolume": 0,
-            })
+            rows.append(
+                {
+                    "Ticker": t,
+                    "Name": t,
+                    "Sector": "Unknown",
+                    "Industry": "Unknown",
+                    "MarketCap": 0,
+                    "AvgVolume": 0,
+                }
+            )
         if (i + 1) % 5 == 0 or i == n - 1:
             progress.progress((i + 1) / n, text=f"Fundamentals… {i+1}/{n}")
     progress.empty()
@@ -224,13 +390,15 @@ def compute_returns(prices: pd.DataFrame) -> pd.DataFrame:
     else:
         ytd_ret = pd.Series(index=prices.columns, dtype=float)
 
-    out = pd.DataFrame({
-        "1D": lookback(1),
-        "1W": lookback(7),
-        "1M": lookback(30),
-        "3M": lookback(90),
-        "YTD": ytd_ret,
-    })
+    out = pd.DataFrame(
+        {
+            "1D": lookback(1),
+            "1W": lookback(7),
+            "1M": lookback(30),
+            "3M": lookback(90),
+            "YTD": ytd_ret,
+        }
+    )
     out.index.name = "Ticker"
     return out.reset_index()
 

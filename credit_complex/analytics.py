@@ -29,16 +29,15 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-
 # ---------------------------------------------------------------------------
 # Asset list
 # ---------------------------------------------------------------------------
 ASSETS = ["LF98OAS", "LUACOAS", "ITRXEBE"]
 
 ASSET_LABELS = {
-    "LF98OAS":  "US HY OAS",
-    "LUACOAS":  "US IG OAS",
-    "ITRXEBE":  "EU iTraxx",
+    "LF98OAS": "US HY OAS",
+    "LUACOAS": "US IG OAS",
+    "ITRXEBE": "EU iTraxx",
 }
 
 ANCHOR = "LF98OAS"
@@ -49,8 +48,9 @@ LOAD_COLS = [f"{a}_load" for a in ASSETS]
 # ---------------------------------------------------------------------------
 # Returns
 # ---------------------------------------------------------------------------
-def compute_returns(prices: pd.DataFrame, vol_scale: bool = False,
-                    vol_window: int = 60) -> pd.DataFrame:
+def compute_returns(
+    prices: pd.DataFrame, vol_scale: bool = False, vol_window: int = 60
+) -> pd.DataFrame:
     """All 3 sub-components are first-differenced (spread units)."""
     out = pd.DataFrame(index=prices.index)
     for a in ASSETS:
@@ -58,8 +58,7 @@ def compute_returns(prices: pd.DataFrame, vol_scale: bool = False,
     out = out.dropna()
 
     if vol_scale:
-        rv = out.rolling(window=vol_window,
-                         min_periods=max(20, vol_window // 2)).std()
+        rv = out.rolling(window=vol_window, min_periods=max(20, vol_window // 2)).std()
         out = (out / rv).dropna()
 
     return out
@@ -81,16 +80,16 @@ def all_pair_keys() -> list[str]:
     return keys
 
 
-def rolling_pairwise_corrs(returns: pd.DataFrame, window: int = 60,
-                           weighting: str = "equal") -> pd.DataFrame:
+def rolling_pairwise_corrs(
+    returns: pd.DataFrame, window: int = 60, weighting: str = "equal"
+) -> pd.DataFrame:
     out = pd.DataFrame(index=returns.index)
     if weighting == "ewm":
         halflife = max(window / 3, 5)
         for i in range(len(ASSETS)):
             for j in range(i + 1, len(ASSETS)):
                 a, b = ASSETS[i], ASSETS[j]
-                ewm_a = returns[a].ewm(halflife=halflife,
-                                       min_periods=window // 2)
+                ewm_a = returns[a].ewm(halflife=halflife, min_periods=window // 2)
                 out[_pair_key(a, b)] = ewm_a.corr(returns[b])
     else:
         for i in range(len(ASSETS)):
@@ -100,8 +99,9 @@ def rolling_pairwise_corrs(returns: pd.DataFrame, window: int = 60,
     return out.dropna()
 
 
-def latest_pairwise_corrs(returns: pd.DataFrame, window: int = 60,
-                          weighting: str = "equal") -> dict:
+def latest_pairwise_corrs(
+    returns: pd.DataFrame, window: int = 60, weighting: str = "equal"
+) -> dict:
     rolled = rolling_pairwise_corrs(returns, window, weighting)
     if rolled.empty:
         return {}
@@ -133,13 +133,18 @@ def _weighted_corr_matrix(z: np.ndarray, w: np.ndarray) -> np.ndarray:
     return cov / np.outer(std, std)
 
 
-def pca_dominant_theme(returns: pd.DataFrame, window: int = 60,
-                       weighting: str = "equal") -> dict:
+def pca_dominant_theme(
+    returns: pd.DataFrame, window: int = 60, weighting: str = "equal"
+) -> dict:
     """PCA on the LAST `window` days, anchored on LF98OAS positive."""
     sub = returns.tail(window).dropna()
     if len(sub) < window // 2:
-        return {"explained_variance": np.nan, "loadings": {},
-                "n_obs": len(sub), "eig_gap": np.nan}
+        return {
+            "explained_variance": np.nan,
+            "loadings": {},
+            "n_obs": len(sub),
+            "eig_gap": np.nan,
+        }
 
     z = ((sub - sub.mean()) / sub.std(ddof=1)).values
     w = _make_weights(len(sub), weighting)
@@ -168,10 +173,13 @@ def pca_dominant_theme(returns: pd.DataFrame, window: int = 60,
     }
 
 
-def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60,
-                         weighting: str = "equal",
-                         pca_method: str = "standard",
-                         presmooth_halflife: int = 0) -> pd.DataFrame:
+def rolling_pca_loadings(
+    returns: pd.DataFrame,
+    window: int = 60,
+    weighting: str = "equal",
+    pca_method: str = "standard",
+    presmooth_halflife: int = 0,
+) -> pd.DataFrame:
     """Rolling PC1 loadings. Anchored on LF98OAS positive."""
     cols = list(returns.columns)
     if cols != ASSETS:
@@ -189,7 +197,7 @@ def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60,
     prev_pc1 = None
 
     for end_idx in range(window, len(returns_used) + 1):
-        sub = returns_used.iloc[end_idx - window:end_idx]
+        sub = returns_used.iloc[end_idx - window : end_idx]
         if sub.isna().any().any():
             continue
         std = sub.std(ddof=1)
@@ -245,13 +253,18 @@ def leadership_stats(loadings_df: pd.DataFrame) -> pd.DataFrame:
     if loadings_df.empty:
         return pd.DataFrame(
             index=loadings_df.index,
-            columns=["Leader", "LeaderLabel", "LeaderLoad",
-                     "Concentration", "SignPattern"],
+            columns=[
+                "Leader",
+                "LeaderLabel",
+                "LeaderLoad",
+                "Concentration",
+                "SignPattern",
+            ],
         )
 
     L = loadings_df[LOAD_COLS].values
     abs_L = np.abs(L)
-    sq = L ** 2
+    sq = L**2
     sq_sum = sq.sum(axis=1)
     sq_sum_safe = np.where(sq_sum > 0, sq_sum, 1.0)
 
@@ -263,15 +276,19 @@ def leadership_stats(loadings_df: pd.DataFrame) -> pd.DataFrame:
 
     def _sign_str(row: np.ndarray) -> str:
         return "".join("+" if v >= 0 else "−" for v in row)
+
     sign_patterns = [_sign_str(row) for row in L]
 
-    return pd.DataFrame({
-        "Leader":        leader_keys,
-        "LeaderLabel":   leader_labels,
-        "LeaderLoad":    leader_loads,
-        "Concentration": concentration,
-        "SignPattern":   sign_patterns,
-    }, index=loadings_df.index)
+    return pd.DataFrame(
+        {
+            "Leader": leader_keys,
+            "LeaderLabel": leader_labels,
+            "LeaderLoad": leader_loads,
+            "Concentration": concentration,
+            "SignPattern": sign_patterns,
+        },
+        index=loadings_df.index,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -289,11 +306,14 @@ def headline_vs_breadth(returns: pd.DataFrame, window: int = 5) -> pd.DataFrame:
     headline = cum[ANCHOR]
     complex_median = cum[ASSETS].median(axis=1)
 
-    out = pd.DataFrame({
-        "HeadlineMove":  headline,
-        "ComplexMedian": complex_median,
-        "Divergence":    headline - complex_median,
-    }, index=returns.index)
+    out = pd.DataFrame(
+        {
+            "HeadlineMove": headline,
+            "ComplexMedian": complex_median,
+            "Divergence": headline - complex_median,
+        },
+        index=returns.index,
+    )
     return out.dropna()
 
 
@@ -321,9 +341,15 @@ def us_eu_divergence(returns: pd.DataFrame, window: int = 20) -> pd.Series:
     When this drops, US/EU credit are decoupling — sometimes a regime signal
     (idiosyncratic stress on one side, e.g. EU sovereign episodes).
     """
-    if returns.empty or "LF98OAS" not in returns.columns or "ITRXEBE" not in returns.columns:
+    if (
+        returns.empty
+        or "LF98OAS" not in returns.columns
+        or "ITRXEBE" not in returns.columns
+    ):
         return pd.Series(dtype=float, name="US_EU_Corr")
-    return returns["LF98OAS"].rolling(window).corr(returns["ITRXEBE"]).rename("US_EU_Corr")
+    return (
+        returns["LF98OAS"].rolling(window).corr(returns["ITRXEBE"]).rename("US_EU_Corr")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -331,10 +357,14 @@ def us_eu_divergence(returns: pd.DataFrame, window: int = 20) -> pd.Series:
 # ---------------------------------------------------------------------------
 def correlation_label(rho: float) -> str:
     a = abs(rho)
-    if a < 0.2:   return "weak"
-    elif a < 0.4: return "moderate"
-    elif a < 0.6: return "strong"
-    else:         return "very strong"
+    if a < 0.2:
+        return "weak"
+    elif a < 0.4:
+        return "moderate"
+    elif a < 0.6:
+        return "strong"
+    else:
+        return "very strong"
 
 
 def correlation_summary(pair: str, rho: float) -> str:
@@ -347,19 +377,26 @@ def correlation_summary(pair: str, rho: float) -> str:
 
 def loading_label(load: float) -> str:
     a = abs(load)
-    if a < 0.35:  return "barely"
-    elif a < 0.55: return "moderate"
-    else:          return "heavy"
+    if a < 0.35:
+        return "barely"
+    elif a < 0.55:
+        return "moderate"
+    else:
+        return "heavy"
 
 
 def concentration_label(c: float) -> str:
     """
     For 3 assets, concentration floor is 1/3 = 0.333. Adjusted thresholds:
     """
-    if c < 0.40:   return "diffuse"      # close to 0.333 floor
-    elif c < 0.50: return "mild lead"
-    elif c < 0.65: return "clear lead"
-    else:          return "dominant"
+    if c < 0.40:
+        return "diffuse"  # close to 0.333 floor
+    elif c < 0.50:
+        return "mild lead"
+    elif c < 0.65:
+        return "clear lead"
+    else:
+        return "dominant"
 
 
 __ANALYTICS_VERSION__ = "credit-v1.0-2026-05-09"

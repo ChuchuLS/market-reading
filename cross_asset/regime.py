@@ -35,16 +35,16 @@ PERSISTENCE_THRESHOLD = 0.85
 # ---- Bucket definitions ----------------------------------------------------
 # Sign triples, in (SPX, UST10Y, DXY) order. Each maps to a stable label.
 BUCKET_ORDER = [
-    "+--",           # SPX+ 10Y- DXY-
-    "-++",           # SPX- 10Y+ DXY+
-    "--+",           # SPX- 10Y- DXY+
-    "++-",           # SPX+ 10Y+ DXY-
-    "+++",           # all positive
-    "+-+",           # SPX+ 10Y- DXY+
-    "-+-",           # SPX- 10Y+ DXY-
-    "---",           # all negative
-    "Mixed",         # weak / unreliable signal
-    "Transitioning", # high-rotation day (low persistence)
+    "+--",  # SPX+ 10Y- DXY-
+    "-++",  # SPX- 10Y+ DXY+
+    "--+",  # SPX- 10Y- DXY+
+    "++-",  # SPX+ 10Y+ DXY-
+    "+++",  # all positive
+    "+-+",  # SPX+ 10Y- DXY+
+    "-+-",  # SPX- 10Y+ DXY-
+    "---",  # all negative
+    "Mixed",  # weak / unreliable signal
+    "Transitioning",  # high-rotation day (low persistence)
 ]
 
 # 8 sign-triples have an archetype unit vector. Used for soft-scoring.
@@ -52,40 +52,42 @@ BUCKET_ORDER = [
 # with equal magnitude on each axis: e.g. +-- → (+1, -1, -1) / sqrt(3).
 SIGN_TRIPLES = ["+--", "-++", "--+", "++-", "+++", "+-+", "-+-", "---"]
 
+
 def _triple_to_unit_vector(triple: str) -> np.ndarray:
     """Convert a sign triple like '+--' to a unit vector in 3D."""
     signs = np.array([1.0 if c == "+" else -1.0 for c in triple])
     return signs / np.linalg.norm(signs)
 
+
 ARCHETYPES = {t: _triple_to_unit_vector(t) for t in SIGN_TRIPLES}
 
 # Display label expanded
 BUCKET_DISPLAY = {
-    "+--":  "SPX+  10Y−  DXY−",
-    "-++":  "SPX−  10Y+  DXY+",
-    "--+":  "SPX−  10Y−  DXY+",
-    "++-":  "SPX+  10Y+  DXY−",
-    "+++":  "SPX+  10Y+  DXY+",
-    "+-+":  "SPX+  10Y−  DXY+",
-    "-+-":  "SPX−  10Y+  DXY−",
-    "---":  "SPX−  10Y−  DXY−",
-    "Mixed":         "Mixed",
+    "+--": "SPX+  10Y−  DXY−",
+    "-++": "SPX−  10Y+  DXY+",
+    "--+": "SPX−  10Y−  DXY+",
+    "++-": "SPX+  10Y+  DXY−",
+    "+++": "SPX+  10Y+  DXY+",
+    "+-+": "SPX+  10Y−  DXY+",
+    "-+-": "SPX−  10Y+  DXY−",
+    "---": "SPX−  10Y−  DXY−",
+    "Mixed": "Mixed",
     "Transitioning": "Transitioning",
 }
 
 # Color palette — distinct, dashboard-aesthetic, dark-bg friendly.
 # Most-common patterns get more prominent colors.
 BUCKET_COLOR = {
-    "+--":           "#22c55e",   # green — risk-on classic
-    "-++":           "#ef4444",   # red — inflation/hawkish
-    "--+":           "#a855f7",   # purple — flight-to-quality-ish
-    "++-":           "#06b6d4",   # cyan — reflation-ish
-    "+++":           "#fbbf24",   # amber — broad rally
-    "+-+":           "#84cc16",   # lime — unusual
-    "-+-":           "#ec4899",   # pink — unusual
-    "---":           "#dc2626",   # dark red — broad de-risking
-    "Mixed":         "#525252",   # gray — no signal
-    "Transitioning": "#f97316",   # orange — rotating
+    "+--": "#22c55e",  # green — risk-on classic
+    "-++": "#ef4444",  # red — inflation/hawkish
+    "--+": "#a855f7",  # purple — flight-to-quality-ish
+    "++-": "#06b6d4",  # cyan — reflation-ish
+    "+++": "#fbbf24",  # amber — broad rally
+    "+-+": "#84cc16",  # lime — unusual
+    "-+-": "#ec4899",  # pink — unusual
+    "---": "#dc2626",  # dark red — broad de-risking
+    "Mixed": "#525252",  # gray — no signal
+    "Transitioning": "#f97316",  # orange — rotating
 }
 
 
@@ -157,7 +159,9 @@ def cosine_persistence(loadings_df: pd.DataFrame) -> pd.Series:
     cols = ["SPX_load", "USGG10YR_load", "DXY_load"]
     V = loadings_df[cols].values
     if V.shape[0] < 2:
-        return pd.Series([np.nan] * V.shape[0], index=loadings_df.index, name="Persistence")
+        return pd.Series(
+            [np.nan] * V.shape[0], index=loadings_df.index, name="Persistence"
+        )
 
     # dot product of consecutive rows
     dots = np.einsum("ij,ij->i", V[1:], V[:-1])
@@ -189,11 +193,13 @@ def regime_runs(regime_series: pd.Series) -> pd.DataFrame:
 
     runs = (
         s.groupby("RunId")
-         .agg(Regime=("Regime", "first"),
-              Start=("Date", "first"),
-              End=("Date", "last"),
-              Duration=("Date", "count"))
-         .reset_index(drop=True)
+        .agg(
+            Regime=("Regime", "first"),
+            Start=("Date", "first"),
+            End=("Date", "last"),
+            Duration=("Date", "count"),
+        )
+        .reset_index(drop=True)
     )
     return runs
 
@@ -216,10 +222,19 @@ def regime_stats(regime_series: pd.Series) -> pd.DataFrame:
     Sorted by Days descending.
     """
     if regime_series.empty:
-        return pd.DataFrame(columns=[
-            "Regime", "Days", "Pct", "Runs",
-            "AvgRun", "MedRun", "MaxRun", "LastEntry", "Active"
-        ])
+        return pd.DataFrame(
+            columns=[
+                "Regime",
+                "Days",
+                "Pct",
+                "Runs",
+                "AvgRun",
+                "MedRun",
+                "MaxRun",
+                "LastEntry",
+                "Active",
+            ]
+        )
 
     runs = regime_runs(regime_series)
     total = len(regime_series)
@@ -228,17 +243,19 @@ def regime_stats(regime_series: pd.Series) -> pd.DataFrame:
     rows = []
     for bucket, group in runs.groupby("Regime"):
         days = group["Duration"].sum()
-        rows.append({
-            "Regime":    bucket,
-            "Days":      int(days),
-            "Pct":       float(days / total * 100),
-            "Runs":      int(len(group)),
-            "AvgRun":    float(group["Duration"].mean()),
-            "MedRun":    float(group["Duration"].median()),
-            "MaxRun":    int(group["Duration"].max()),
-            "LastEntry": group["Start"].max(),
-            "Active":    bucket == current,
-        })
+        rows.append(
+            {
+                "Regime": bucket,
+                "Days": int(days),
+                "Pct": float(days / total * 100),
+                "Runs": int(len(group)),
+                "AvgRun": float(group["Duration"].mean()),
+                "MedRun": float(group["Duration"].median()),
+                "MaxRun": int(group["Duration"].max()),
+                "LastEntry": group["Start"].max(),
+                "Active": bucket == current,
+            }
+        )
 
     df = pd.DataFrame(rows).sort_values("Days", ascending=False).reset_index(drop=True)
     return df
@@ -266,8 +283,10 @@ def current_regime_info(
             start_date = d
         else:
             break
-    days_in = int((regime_series.index <= last_date).sum() -
-                  (regime_series.index < start_date).sum())
+    days_in = int(
+        (regime_series.index <= last_date).sum()
+        - (regime_series.index < start_date).sum()
+    )
 
     last_loadings = loadings_df.iloc[-1]
     last_persistence = (
@@ -277,15 +296,15 @@ def current_regime_info(
     )
 
     return {
-        "regime":     current,
-        "label":      BUCKET_DISPLAY[current],
-        "color":      BUCKET_COLOR[current],
-        "since":      start_date,
-        "days_in":    days_in,
-        "spx_load":   float(last_loadings["SPX_load"]),
-        "ust_load":   float(last_loadings["USGG10YR_load"]),
-        "dxy_load":   float(last_loadings["DXY_load"]),
-        "expvar":     float(last_loadings["ExplainedVar"]),
+        "regime": current,
+        "label": BUCKET_DISPLAY[current],
+        "color": BUCKET_COLOR[current],
+        "since": start_date,
+        "days_in": days_in,
+        "spx_load": float(last_loadings["SPX_load"]),
+        "ust_load": float(last_loadings["USGG10YR_load"]),
+        "dxy_load": float(last_loadings["DXY_load"]),
+        "expvar": float(last_loadings["ExplainedVar"]),
         "persistence": last_persistence,
     }
 
@@ -366,15 +385,15 @@ def transitions_log(
     Returns the most recent `last_n` transitions, sorted newest-first.
     """
     if regime_series.empty or len(regime_series) < 2:
-        return pd.DataFrame(columns=[
-            "Date", "From", "To", "Persistence", "DurationFrom"
-        ])
+        return pd.DataFrame(
+            columns=["Date", "From", "To", "Persistence", "DurationFrom"]
+        )
 
     runs = regime_runs(regime_series)
     if len(runs) < 2:
-        return pd.DataFrame(columns=[
-            "Date", "From", "To", "Persistence", "DurationFrom"
-        ])
+        return pd.DataFrame(
+            columns=["Date", "From", "To", "Persistence", "DurationFrom"]
+        )
 
     aligned_pers = persistence_series.reindex(regime_series.index)
 
@@ -388,19 +407,21 @@ def transitions_log(
         # (lookback window for capturing rotation magnitude)
         end_idx = aligned_pers.index.get_loc(transition_date)
         start_idx = max(0, end_idx - 4)
-        window_pers = aligned_pers.iloc[start_idx:end_idx + 1].dropna()
+        window_pers = aligned_pers.iloc[start_idx : end_idx + 1].dropna()
         if len(window_pers) > 0:
             pers = float(window_pers.min())
         else:
             pers = None
 
-        transitions.append({
-            "Date":         transition_date,
-            "From":         prev_run["Regime"],
-            "To":           curr_run["Regime"],
-            "Persistence":  pers,
-            "DurationFrom": int(prev_run["Duration"]),
-        })
+        transitions.append(
+            {
+                "Date": transition_date,
+                "From": prev_run["Regime"],
+                "To": curr_run["Regime"],
+                "Persistence": pers,
+                "DurationFrom": int(prev_run["Duration"]),
+            }
+        )
 
     df = pd.DataFrame(transitions)
     df = df.sort_values("Date", ascending=False).reset_index(drop=True)

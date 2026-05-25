@@ -22,18 +22,29 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from shared.plots import plot_regime_timeline
 from theming import BG, GRID, TEXT, TEXT_DIM, DARK_LAYOUT
 from sector_complex.analytics import (
-    ASSETS, ASSET_LABELS, ANCHOR, BENCHMARK,
-    compute_returns, benchmark_returns,
-    avg_pairwise_correlation, correlation_regime_summary,
-    relative_strength, cyclical_defensive_spread,
-    rolling_cyc_def_spread, classify_sector_regime, smooth_regime,
-    sector_regime_info, sector_regime_color,
+    ASSETS,
+    ASSET_LABELS,
+    ANCHOR,
+    BENCHMARK,
+    compute_returns,
+    benchmark_returns,
+    avg_pairwise_correlation,
+    correlation_regime_summary,
+    relative_strength,
+    cyclical_defensive_spread,
+    rolling_cyc_def_spread,
+    classify_sector_regime,
+    smooth_regime,
+    sector_regime_info,
+    sector_regime_color,
     __ANALYTICS_VERSION__,
 )
 from sector_complex.regime import (
-    regime_runs, transitions_log,
+    regime_runs,
+    transitions_log,
 )
 
 DATA_PATH = Path(__file__).parent.parent / "data" / "MARKET_DATA.xlsx"
@@ -223,9 +234,9 @@ def _render_correlation_regime(returns: pd.DataFrame):
     # Headline card
     pct = summ["percentile"]
     if pct >= 60:
-        card_color = "#f97316"   # macro = orange
+        card_color = "#f97316"  # macro = orange
     elif pct <= 40:
-        card_color = "#22c55e"   # micro = green
+        card_color = "#22c55e"  # micro = green
     else:
         card_color = "#888"
     st.markdown(
@@ -245,28 +256,38 @@ def _render_correlation_regime(returns: pd.DataFrame):
 
     # Time series of avg correlation
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=corr.index, y=corr["AvgCorr"], mode="lines",
-        line=dict(color="#fbbf24", width=1.4),
-        hovertemplate="%{x|%Y-%m-%d}: %{y:.2f}<extra></extra>",
-        name="Avg pairwise corr",
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=corr.index,
+            y=corr["AvgCorr"],
+            mode="lines",
+            line=dict(color="#fbbf24", width=1.4),
+            hovertemplate="%{x|%Y-%m-%d}: %{y:.2f}<extra></extra>",
+            name="Avg pairwise corr",
+        )
+    )
     # Median reference line
     med = summ["median"]
-    fig.add_hline(y=med, line=dict(color="#666", width=1, dash="dash"),
-                  annotation_text="trailing median", annotation_position="right",
-                  annotation_font=dict(size=9, color=TEXT_DIM))
+    fig.add_hline(
+        y=med,
+        line=dict(color="#666", width=1, dash="dash"),
+        annotation_text="trailing median",
+        annotation_position="right",
+        annotation_font=dict(size=9, color=TEXT_DIM),
+    )
     fig.update_layout(
-        **{**DARK_LAYOUT, "height": 240, "showlegend": False,
-           "margin": dict(l=40, r=20, t=10, b=30),
-           "yaxis": dict(gridcolor=GRID, zeroline=False,
-                         tickfont=dict(size=9, color=TEXT_DIM)),
-           "xaxis": dict(showgrid=False,
-                         tickfont=dict(size=9, color=TEXT_DIM)),
+        **{
+            **DARK_LAYOUT,
+            "height": 240,
+            "showlegend": False,
+            "margin": dict(l=40, r=20, t=10, b=30),
+            "yaxis": dict(
+                gridcolor=GRID, zeroline=False, tickfont=dict(size=9, color=TEXT_DIM)
+            ),
+            "xaxis": dict(showgrid=False, tickfont=dict(size=9, color=TEXT_DIM)),
         }
     )
-    st.plotly_chart(fig, use_container_width=True,
-                    config={"displayModeBar": False})
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 
 # ---------------------------------------------------------------------------
@@ -343,42 +364,35 @@ def _render_sector_regime(returns):
         unsafe_allow_html=True,
     )
     runs = regime_runs(regimes)
-    fig_stripe = go.Figure()
-    for _, run in runs.iterrows():
-        width_ms = (run["End"] - run["Start"] + pd.Timedelta(days=1)).total_seconds() * 1000.0
-        fig_stripe.add_trace(go.Bar(
-            x=[width_ms],
-            y=["Regime"],
-            base=run["Start"].isoformat(),
-            orientation="h",
-            marker=dict(color=sector_regime_color(run["Regime"]),
-                        line=dict(color=BG, width=0.5)),
-            hovertemplate=(
-                f"<b>{run['Regime']}</b><br>"
-                f"{run['Start'].strftime('%Y-%m-%d')} \u2192 "
-                f"{run['End'].strftime('%Y-%m-%d')}<br>"
-                f"{run['Duration']} day(s)<extra></extra>"
-            ),
-            showlegend=False,
-        ))
-    fig_stripe.update_layout(
-        **{**DARK_LAYOUT,
-           "height": 90, "barmode": "overlay", "showlegend": False,
-           "margin": dict(l=10, r=10, t=10, b=30),
-           "yaxis": dict(visible=False, fixedrange=True),
-           "xaxis": dict(type="date", showgrid=False,
-                         tickfont=dict(size=10, color=TEXT_DIM)),
-        }
+    fig_stripe = plot_regime_timeline(
+        runs=runs,
+        color_func=sector_regime_color,
+        x_min=regimes.index.min(),
+        x_max=regimes.index.max(),
+        height=120,
+        dark_layout=DARK_LAYOUT,
+        text_dim=TEXT_DIM,
     )
-    st.plotly_chart(fig_stripe, use_container_width=True,
-                    config={"displayModeBar": False})
+    st.plotly_chart(
+        fig_stripe, use_container_width=True, config={"displayModeBar": False}
+    )
 
     present = list(runs["Regime"].unique())
-    legend_html = ("<div style='display:flex;flex-wrap:wrap;gap:0.8rem;"
-                   "font-size:10px;color:#bbb;margin-bottom:1rem;'>")
-    for r in ["Risk-On / Macro", "Risk-On / Micro", "Risk-On / Bal",
-              "Risk-Off / Macro", "Risk-Off / Micro", "Risk-Off / Bal",
-              "Neutral / Macro", "Neutral / Micro", "Neutral / Bal"]:
+    legend_html = (
+        "<div style='display:flex;flex-wrap:wrap;gap:0.8rem;"
+        "font-size:10px;color:#bbb;margin-bottom:1rem;'>"
+    )
+    for r in [
+        "Risk-On / Macro",
+        "Risk-On / Micro",
+        "Risk-On / Bal",
+        "Risk-Off / Macro",
+        "Risk-Off / Micro",
+        "Risk-Off / Bal",
+        "Neutral / Macro",
+        "Neutral / Micro",
+        "Neutral / Bal",
+    ]:
         if r in present:
             legend_html += (
                 f"<span style='display:flex;align-items:center;gap:4px;'>"
@@ -395,23 +409,29 @@ def _render_sector_regime(returns):
         unsafe_allow_html=True,
     )
     fig_sp = go.Figure()
-    fig_sp.add_trace(go.Scatter(
-        x=spread_series.index, y=spread_series.values * 100, mode="lines",
-        line=dict(color="#22c55e", width=1.2),
-        hovertemplate="%{x|%Y-%m-%d}: %{y:+.1f}%<extra></extra>",
-    ))
+    fig_sp.add_trace(
+        go.Scatter(
+            x=spread_series.index,
+            y=spread_series.values * 100,
+            mode="lines",
+            line=dict(color="#22c55e", width=1.2),
+            hovertemplate="%{x|%Y-%m-%d}: %{y:+.1f}%<extra></extra>",
+        )
+    )
     fig_sp.add_hline(y=0, line=dict(color="#666", width=1, dash="dash"))
     fig_sp.update_layout(
-        **{**DARK_LAYOUT, "height": 200, "showlegend": False,
-           "margin": dict(l=40, r=20, t=10, b=30),
-           "yaxis": dict(gridcolor=GRID, zeroline=False,
-                         tickfont=dict(size=9, color=TEXT_DIM)),
-           "xaxis": dict(showgrid=False,
-                         tickfont=dict(size=9, color=TEXT_DIM)),
+        **{
+            **DARK_LAYOUT,
+            "height": 200,
+            "showlegend": False,
+            "margin": dict(l=40, r=20, t=10, b=30),
+            "yaxis": dict(
+                gridcolor=GRID, zeroline=False, tickfont=dict(size=9, color=TEXT_DIM)
+            ),
+            "xaxis": dict(showgrid=False, tickfont=dict(size=9, color=TEXT_DIM)),
         }
     )
-    st.plotly_chart(fig_sp, use_container_width=True,
-                    config={"displayModeBar": False})
+    st.plotly_chart(fig_sp, use_container_width=True, config={"displayModeBar": False})
 
     trans = transitions_log(regimes, pd.Series(dtype=float), last_n=10)
     if not trans.empty:
@@ -452,32 +472,43 @@ def _render_leadership(returns: pd.DataFrame, bench: pd.Series):
     # Horizontal bar chart, sorted
     colors = ["#22c55e" if v >= 0 else "#f97316" for v in rs["RelStrength"]]
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        y=rs["Label"][::-1],
-        x=(rs["RelStrength"] * 100)[::-1],
-        orientation="h",
-        marker=dict(color=colors[::-1]),
-        hovertemplate="%{y}: %{x:+.1f}% vs SPY<extra></extra>",
-    ))
+    fig.add_trace(
+        go.Bar(
+            y=rs["Label"][::-1],
+            x=(rs["RelStrength"] * 100)[::-1],
+            orientation="h",
+            marker=dict(color=colors[::-1]),
+            hovertemplate="%{y}: %{x:+.1f}% vs SPY<extra></extra>",
+        )
+    )
     fig.update_layout(
-        **{**DARK_LAYOUT, "height": 340, "showlegend": False,
-           "margin": dict(l=90, r=20, t=10, b=30),
-           "yaxis": dict(tickfont=dict(size=10, color=TEXT)),
-           "xaxis": dict(title=dict(text="relative strength vs SPY (%, 60d)",
-                                    font=dict(size=10, color=TEXT_DIM)),
-                         gridcolor=GRID, zeroline=True, zerolinecolor="#666",
-                         tickfont=dict(size=9, color=TEXT_DIM)),
+        **{
+            **DARK_LAYOUT,
+            "height": 340,
+            "showlegend": False,
+            "margin": dict(l=90, r=20, t=10, b=30),
+            "yaxis": dict(tickfont=dict(size=10, color=TEXT)),
+            "xaxis": dict(
+                title=dict(
+                    text="relative strength vs SPY (%, 60d)",
+                    font=dict(size=10, color=TEXT_DIM),
+                ),
+                gridcolor=GRID,
+                zeroline=True,
+                zerolinecolor="#666",
+                tickfont=dict(size=9, color=TEXT_DIM),
+            ),
         }
     )
-    st.plotly_chart(fig, use_container_width=True,
-                    config={"displayModeBar": False})
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # Cyclical / defensive read
     cd = cyclical_defensive_spread(returns, window=60)
     if cd:
         spread = cd["spread"]
-        cd_color = ("#22c55e" if spread > 0.02
-                    else "#f97316" if spread < -0.02 else "#888")
+        cd_color = (
+            "#22c55e" if spread > 0.02 else "#f97316" if spread < -0.02 else "#888"
+        )
         st.markdown(
             f"<div style='border:1px solid {cd_color};border-radius:6px;"
             f"padding:0.6rem 1rem;font-size:12px;color:#bbb;'>"

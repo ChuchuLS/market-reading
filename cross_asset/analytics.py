@@ -39,8 +39,9 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 # Returns
 # ---------------------------------------------------------------------------
-def compute_returns(prices: pd.DataFrame, vol_scale: bool = False,
-                    vol_window: int = 60) -> pd.DataFrame:
+def compute_returns(
+    prices: pd.DataFrame, vol_scale: bool = False, vol_window: int = 60
+) -> pd.DataFrame:
     """
     Convert raw levels to a returns DataFrame:
       SPX, DXY  -> log returns
@@ -71,8 +72,9 @@ def compute_returns(prices: pd.DataFrame, vol_scale: bool = False,
 # ---------------------------------------------------------------------------
 # Pairwise rolling correlations
 # ---------------------------------------------------------------------------
-def rolling_pairwise_corrs(returns: pd.DataFrame, window: int = 60,
-                           weighting: str = "equal") -> pd.DataFrame:
+def rolling_pairwise_corrs(
+    returns: pd.DataFrame, window: int = 60, weighting: str = "equal"
+) -> pd.DataFrame:
     """
     Compute rolling pairwise Pearson correlations.
 
@@ -105,8 +107,9 @@ def rolling_pairwise_corrs(returns: pd.DataFrame, window: int = 60,
     return out.dropna()
 
 
-def latest_pairwise_corrs(returns: pd.DataFrame, window: int = 60,
-                          weighting: str = "equal") -> dict:
+def latest_pairwise_corrs(
+    returns: pd.DataFrame, window: int = 60, weighting: str = "equal"
+) -> dict:
     """Return today's pairwise correlations as a dict of floats."""
     rolled = rolling_pairwise_corrs(returns, window, weighting)
     if rolled.empty:
@@ -163,8 +166,9 @@ def _weighted_cov_matrix(x: np.ndarray, w: np.ndarray) -> np.ndarray:
     return cov
 
 
-def pca_dominant_theme(returns: pd.DataFrame, window: int = 60,
-                       weighting: str = "equal") -> dict:
+def pca_dominant_theme(
+    returns: pd.DataFrame, window: int = 60, weighting: str = "equal"
+) -> dict:
     """
     Run PCA on standardized returns over the LAST `window` days.
     Returns dict with:
@@ -175,8 +179,12 @@ def pca_dominant_theme(returns: pd.DataFrame, window: int = 60,
     """
     sub = returns.tail(window).dropna()
     if len(sub) < window // 2:
-        return {"explained_variance": np.nan, "loadings": {}, "n_obs": len(sub),
-                "eig_gap": np.nan}
+        return {
+            "explained_variance": np.nan,
+            "loadings": {},
+            "n_obs": len(sub),
+            "eig_gap": np.nan,
+        }
 
     # z-score within window so PCA operates on correlation matrix
     z = ((sub - sub.mean()) / sub.std(ddof=1)).values
@@ -206,10 +214,13 @@ def pca_dominant_theme(returns: pd.DataFrame, window: int = 60,
     }
 
 
-def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60,
-                         weighting: str = "equal",
-                         pca_method: str = "standard",
-                         presmooth_halflife: int = 0) -> pd.DataFrame:
+def rolling_pca_loadings(
+    returns: pd.DataFrame,
+    window: int = 60,
+    weighting: str = "equal",
+    pca_method: str = "standard",
+    presmooth_halflife: int = 0,
+) -> pd.DataFrame:
     """
     Rolling PC1 loadings over time. For each day t, compute weighted PCA on
     the preceding `window` days. Returns DataFrame indexed by Date with cols:
@@ -252,7 +263,7 @@ def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60,
     prev_pc1 = None
 
     for end_idx in range(window, len(returns_used) + 1):
-        sub = returns_used.iloc[end_idx - window:end_idx]
+        sub = returns_used.iloc[end_idx - window : end_idx]
         if sub.isna().any().any():
             continue
         # Avoid degenerate std (e.g., if pre-smoothing made a column flat)
@@ -286,14 +297,16 @@ def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60,
         eig_gap = float((eig_vals[0] - eig_vals[1]) / eig_vals[0])
         explained = float(eig_vals[0] / eig_vals.sum())
 
-        out_records.append({
-            "Date": sub.index[-1],
-            "SPX_load": float(pc1[cols.index("SPX")]),
-            "USGG10YR_load": float(pc1[cols.index("USGG10YR")]),
-            "DXY_load": float(pc1[cols.index("DXY")]),
-            "ExplainedVar": explained,
-            "EigGap": eig_gap,
-        })
+        out_records.append(
+            {
+                "Date": sub.index[-1],
+                "SPX_load": float(pc1[cols.index("SPX")]),
+                "USGG10YR_load": float(pc1[cols.index("USGG10YR")]),
+                "DXY_load": float(pc1[cols.index("DXY")]),
+                "ExplainedVar": explained,
+                "EigGap": eig_gap,
+            }
+        )
 
     df = pd.DataFrame(out_records).set_index("Date")
     if df.empty:
@@ -348,7 +361,9 @@ def correlation_story(pair: str, rho: float) -> str:
         if rho > 0.3:
             return "Yields and dollar rising together (rate-driven dollar strength)"
         elif rho < -0.3:
-            return "Yields and dollar diverging (unusual; often EM stress or carry unwind)"
+            return (
+                "Yields and dollar diverging (unusual; often EM stress or carry unwind)"
+            )
         else:
             return "Rate-currency link weakening"
     return f"{sign} ({correlation_label(rho)})"

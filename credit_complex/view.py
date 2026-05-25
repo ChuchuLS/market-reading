@@ -25,23 +25,43 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 
+from shared.plots import plot_regime_timeline
 from theming import BG, GRID, TEXT, TEXT_DIM, DARK_LAYOUT
 from credit_complex.analytics import (
-    ASSETS, ASSET_LABELS, LOAD_COLS, ANCHOR,
+    ASSETS,
+    ASSET_LABELS,
+    LOAD_COLS,
+    ANCHOR,
     compute_returns,
-    rolling_pairwise_corrs, latest_pairwise_corrs, all_pair_keys,
-    pca_dominant_theme, rolling_pca_loadings, leadership_stats,
-    headline_vs_breadth, hy_ig_ratio, us_eu_divergence,
-    correlation_summary, correlation_label,
-    loading_label, concentration_label,
+    rolling_pairwise_corrs,
+    latest_pairwise_corrs,
+    all_pair_keys,
+    pca_dominant_theme,
+    rolling_pca_loadings,
+    leadership_stats,
+    headline_vs_breadth,
+    hy_ig_ratio,
+    us_eu_divergence,
+    correlation_summary,
+    correlation_label,
+    loading_label,
+    concentration_label,
     __ANALYTICS_VERSION__,
 )
 from credit_complex.regime import (
-    classify_loadings_series, cosine_persistence,
-    apply_persistence_filter, transitions_log,
-    regime_runs, regime_stats, current_regime_info,
-    regime_color, LEADER_COLOR, SPECIAL_COLOR,
-    LOADING_MAGNITUDE_THRESHOLD, EXP_VAR_THRESHOLD, PERSISTENCE_THRESHOLD,
+    classify_loadings_series,
+    cosine_persistence,
+    apply_persistence_filter,
+    transitions_log,
+    regime_runs,
+    regime_stats,
+    current_regime_info,
+    regime_color,
+    LEADER_COLOR,
+    SPECIAL_COLOR,
+    LOADING_MAGNITUDE_THRESHOLD,
+    EXP_VAR_THRESHOLD,
+    PERSISTENCE_THRESHOLD,
     __REGIME_VERSION__,
 )
 
@@ -51,9 +71,9 @@ SHEET_NAME = "ficc"
 # ---------------------------------------------------------------------------
 # Color palette (colorblind-safe)
 # ---------------------------------------------------------------------------
-COLOR_POS_BRIGHT  = "#3b82f6"
-COLOR_NEG_BRIGHT  = "#f97316"
-COLOR_NEUTRAL     = "#1a1a1a"
+COLOR_POS_BRIGHT = "#3b82f6"
+COLOR_NEG_BRIGHT = "#f97316"
+COLOR_NEUTRAL = "#1a1a1a"
 
 GRAYSCALE_MAG = [
     [0.0, "#0a0a0a"],
@@ -61,22 +81,22 @@ GRAYSCALE_MAG = [
     [1.0, "#f5f5f5"],
 ]
 
-SEVERITY_LIGHT  = "#bfdbfe"
-SEVERITY_MILD   = "#60a5fa"
+SEVERITY_LIGHT = "#bfdbfe"
+SEVERITY_MILD = "#60a5fa"
 SEVERITY_STRONG = "#2563eb"
-SEVERITY_MAX    = "#1e40af"
+SEVERITY_MAX = "#1e40af"
 
 ASSET_COLOR = {
-    "LF98OAS": "#3b82f6",   # blue
-    "LUACOAS": "#06b6d4",   # cyan
-    "ITRXEBE": "#f97316",   # orange
+    "LF98OAS": "#3b82f6",  # blue
+    "LUACOAS": "#06b6d4",  # cyan
+    "ITRXEBE": "#f97316",  # orange
 }
 
 # Substring -> canonical name. Match logic for credit sub-components.
 SUBSTRING_MAP = [
-    (("LF98OAS",),   "LF98OAS"),
-    (("LUACOAS",),   "LUACOAS"),
-    (("ITRXEBE",),   "ITRXEBE"),
+    (("LF98OAS",), "LF98OAS"),
+    (("LUACOAS",), "LUACOAS"),
+    (("ITRXEBE",), "ITRXEBE"),
 ]
 
 
@@ -228,7 +248,9 @@ def render_credit_complex():
             st.session_state["credit_pca_presmooth"] = 15
             st.rerun()
     with pc3:
-        if st.button("≈ Very Smooth", use_container_width=True, key="credit_preset_vsmooth"):
+        if st.button(
+            "≈ Very Smooth", use_container_width=True, key="credit_preset_vsmooth"
+        ):
             for ns in ("credit_corr", "credit_pca"):
                 st.session_state[f"{ns}_window"] = 120
                 st.session_state[f"{ns}_weighting"] = "ewm"
@@ -243,27 +265,30 @@ def render_credit_complex():
             "Return scaling",
             options=["zscore", "volscale"],
             index=["zscore", "volscale"].index(
-                st.session_state.get("credit_scaling", "zscore")),
+                st.session_state.get("credit_scaling", "zscore")
+            ),
             format_func=lambda x: {
-                "zscore":   "Z-score (within window)",
+                "zscore": "Z-score (within window)",
                 "volscale": "Vol-scale (trailing-vol divisor)",
             }[x],
             key="credit_scaling",
             horizontal=True,
         )
     with tbc2:
-        st.markdown("<div style='font-size:10px;color:transparent;'>spacer</div>",
-                    unsafe_allow_html=True)
+        st.markdown(
+            "<div style='font-size:10px;color:transparent;'>spacer</div>",
+            unsafe_allow_html=True,
+        )
         if st.button("↻ Refresh data", use_container_width=True, key="credit_refresh"):
             st.cache_data.clear()
             st.rerun()
 
-    corr_window      = st.session_state.get("credit_corr_window", 20)
-    corr_weighting   = st.session_state.get("credit_corr_weighting", "equal")
-    pca_window       = st.session_state.get("credit_pca_window", 20)
-    pca_weighting    = st.session_state.get("credit_pca_weighting", "equal")
-    pca_method       = st.session_state.get("credit_pca_method", "standard")
-    pca_presmooth    = st.session_state.get("credit_pca_presmooth", 0)
+    corr_window = st.session_state.get("credit_corr_window", 20)
+    corr_weighting = st.session_state.get("credit_corr_weighting", "equal")
+    pca_window = st.session_state.get("credit_pca_window", 20)
+    pca_weighting = st.session_state.get("credit_pca_weighting", "equal")
+    pca_method = st.session_state.get("credit_pca_method", "standard")
+    pca_presmooth = st.session_state.get("credit_pca_presmooth", 0)
 
     pca_smooth_str = f"halflife={pca_presmooth}d" if pca_presmooth > 0 else "off"
     settings_html = f"""
@@ -308,12 +333,14 @@ def render_credit_complex():
     st.markdown("---")
 
     # ---- Sub-tabs ---------------------------------------------------------
-    tab_heatmap, tab_drill, tab_corr, tab_regime = st.tabs([
-        "🔥 Heatmap",
-        "📈 Drill-down",
-        "📊 Correlations & Theme",
-        "🔬 Regime",
-    ])
+    tab_heatmap, tab_drill, tab_corr, tab_regime = st.tabs(
+        [
+            "🔥 Heatmap",
+            "📈 Drill-down",
+            "📊 Correlations & Theme",
+            "🔬 Regime",
+        ]
+    )
 
     loadings = rolling_pca_loadings(
         returns,
@@ -355,13 +382,17 @@ def _render_headline_diagnostic(returns: pd.DataFrame):
         msg = "HY OAS is moving in line with the rest of the credit complex."
         msg_color = "#888"
     elif div > 0:
-        msg = (f"HY OAS is moving <b style='color:#fff;'>more</b> than the rest of "
-               f"the complex (divergence +{div:.2f}σ over 5d). HY is leading credit.")
+        msg = (
+            f"HY OAS is moving <b style='color:#fff;'>more</b> than the rest of "
+            f"the complex (divergence +{div:.2f}σ over 5d). HY is leading credit."
+        )
         msg_color = "#3b82f6"
     else:
-        msg = (f"HY OAS is moving <b style='color:#fff;'>less</b> than the rest of "
-               f"the complex (divergence {div:.2f}σ over 5d). IG or EU credit is "
-               f"doing more work; the HY headline understates the broader credit story.")
+        msg = (
+            f"HY OAS is moving <b style='color:#fff;'>less</b> than the rest of "
+            f"the complex (divergence {div:.2f}σ over 5d). IG or EU credit is "
+            f"doing more work; the HY headline understates the broader credit story."
+        )
         msg_color = "#f97316"
 
     st.markdown(
@@ -396,7 +427,9 @@ def _render_credit_shape_panel(prices: pd.DataFrame, returns: pd.DataFrame):
 
     last_ratio = float(ratio.iloc[-1])
     last_5d_change = float(ratio.iloc[-1] - ratio.iloc[-6]) if len(ratio) >= 6 else 0.0
-    last_20d_change = float(ratio.iloc[-1] - ratio.iloc[-21]) if len(ratio) >= 21 else 0.0
+    last_20d_change = (
+        float(ratio.iloc[-1] - ratio.iloc[-21]) if len(ratio) >= 21 else 0.0
+    )
 
     # HY/IG regime label
     if last_ratio > 4.5:
@@ -495,34 +528,48 @@ def _render_credit_shape_panel(prices: pd.DataFrame, returns: pd.DataFrame):
         # Inline sparkline of HY/IG ratio over the last 252 days
         sub = ratio.tail(252)
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=sub.index, y=sub.values,
-            mode="lines",
-            line=dict(color="#06b6d4", width=1.5),
-            fill="tozeroy",
-            fillcolor="rgba(6,182,212,0.10)",
-            hovertemplate="%{x|%Y-%m-%d}<br>HY/IG: %{y:.2f}x<extra></extra>",
-            showlegend=False,
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=sub.index,
+                y=sub.values,
+                mode="lines",
+                line=dict(color="#06b6d4", width=1.5),
+                fill="tozeroy",
+                fillcolor="rgba(6,182,212,0.10)",
+                hovertemplate="%{x|%Y-%m-%d}<br>HY/IG: %{y:.2f}x<extra></extra>",
+                showlegend=False,
+            )
+        )
         # Reference line for "normal" zone
-        fig.add_hline(y=3.5, line=dict(color="rgba(252,211,77,0.4)", width=1, dash="dot"),
-                      annotation_text="elevated", annotation_position="left",
-                      annotation_font=dict(color=TEXT_DIM, size=9))
-        fig.add_hline(y=4.5, line=dict(color="rgba(249,115,22,0.4)", width=1, dash="dot"),
-                      annotation_text="stressed", annotation_position="left",
-                      annotation_font=dict(color=TEXT_DIM, size=9))
+        fig.add_hline(
+            y=3.5,
+            line=dict(color="rgba(252,211,77,0.4)", width=1, dash="dot"),
+            annotation_text="elevated",
+            annotation_position="left",
+            annotation_font=dict(color=TEXT_DIM, size=9),
+        )
+        fig.add_hline(
+            y=4.5,
+            line=dict(color="rgba(249,115,22,0.4)", width=1, dash="dot"),
+            annotation_text="stressed",
+            annotation_position="left",
+            annotation_font=dict(color=TEXT_DIM, size=9),
+        )
         fig.update_layout(
-            **{**DARK_LAYOUT,
-               "height": 90, "showlegend": False,
-               "margin": dict(l=10, r=10, t=10, b=20),
-               "yaxis": dict(showgrid=True, gridcolor=GRID,
-                             tickfont=dict(size=9, color=TEXT_DIM)),
-               "xaxis": dict(showgrid=False,
-                             tickfont=dict(size=9, color=TEXT_DIM), type="date"),
+            **{
+                **DARK_LAYOUT,
+                "height": 90,
+                "showlegend": False,
+                "margin": dict(l=10, r=10, t=10, b=20),
+                "yaxis": dict(
+                    showgrid=True, gridcolor=GRID, tickfont=dict(size=9, color=TEXT_DIM)
+                ),
+                "xaxis": dict(
+                    showgrid=False, tickfont=dict(size=9, color=TEXT_DIM), type="date"
+                ),
             }
         )
-        st.plotly_chart(fig, use_container_width=True,
-                        config={"displayModeBar": False})
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 
 # ---------------------------------------------------------------------------
@@ -558,52 +605,62 @@ def _render_heatmap_panel(loadings: pd.DataFrame):
 
     SIGN_THRESHOLD = 0.30  # 3 assets: higher floor than 5-asset basket
     text_grid = np.where(
-        np.abs(Z_signed) >= SIGN_THRESHOLD,
-        np.where(Z_signed >= 0, "+", "−"),
-        ""
+        np.abs(Z_signed) >= SIGN_THRESHOLD, np.where(Z_signed >= 0, "+", "−"), ""
     )
 
-    hover_text = np.array([
-        [f"loading = {Z_signed[i, j]:+.3f}" for j in range(Z_signed.shape[1])]
-        for i in range(Z_signed.shape[0])
-    ])
+    hover_text = np.array(
+        [
+            [f"loading = {Z_signed[i, j]:+.3f}" for j in range(Z_signed.shape[1])]
+            for i in range(Z_signed.shape[0])
+        ]
+    )
 
-    fig = go.Figure(data=go.Heatmap(
-        z=Z_mag,
-        x=loadings.index,
-        y=[ASSET_LABELS[a] for a in ASSETS],
-        colorscale=GRAYSCALE_MAG,
-        zmin=0, zmax=1,
-        text=text_grid,
-        texttemplate="%{text}",
-        textfont=dict(family="JetBrains Mono", size=10, color="#fbbf24"),
-        customdata=hover_text,
-        hovertemplate="<b>%{y}</b><br>%{x|%Y-%m-%d}<br>%{customdata}<extra></extra>",
-        colorbar=dict(
-            title=dict(text="|PC1 loading|", font=dict(color=TEXT_DIM, size=10)),
-            tickfont=dict(color=TEXT_DIM, size=9),
-            tickvals=[0, 0.25, 0.5, 0.75, 1.0],
-            len=0.85, thickness=12,
-        ),
-    ))
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=Z_mag,
+            x=loadings.index,
+            y=[ASSET_LABELS[a] for a in ASSETS],
+            colorscale=GRAYSCALE_MAG,
+            zmin=0,
+            zmax=1,
+            text=text_grid,
+            texttemplate="%{text}",
+            textfont=dict(family="JetBrains Mono", size=10, color="#fbbf24"),
+            customdata=hover_text,
+            hovertemplate="<b>%{y}</b><br>%{x|%Y-%m-%d}<br>%{customdata}<extra></extra>",
+            colorbar=dict(
+                title=dict(text="|PC1 loading|", font=dict(color=TEXT_DIM, size=10)),
+                tickfont=dict(color=TEXT_DIM, size=9),
+                tickvals=[0, 0.25, 0.5, 0.75, 1.0],
+                len=0.85,
+                thickness=12,
+            ),
+        )
+    )
 
     fig.update_layout(
-        **{**DARK_LAYOUT,
-           "height": 280,  # 3 rows fits in less height than 5
-           "showlegend": False,
-           "margin": dict(l=100, r=20, t=10, b=40),
-           "xaxis": dict(type="date", showgrid=False,
-                         tickfont=dict(size=10, color=TEXT_DIM)),
-           "yaxis": dict(showgrid=False,
-                         tickfont=dict(size=11, color=TEXT, family="JetBrains Mono"),
-                         autorange="reversed"),
+        **{
+            **DARK_LAYOUT,
+            "height": 280,  # 3 rows fits in less height than 5
+            "showlegend": False,
+            "margin": dict(l=100, r=20, t=10, b=40),
+            "xaxis": dict(
+                type="date", showgrid=False, tickfont=dict(size=10, color=TEXT_DIM)
+            ),
+            "yaxis": dict(
+                showgrid=False,
+                tickfont=dict(size=11, color=TEXT, family="JetBrains Mono"),
+                autorange="reversed",
+            ),
         }
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # Aux strip
     fig_aux = make_subplots(
-        rows=2, cols=1, shared_xaxes=True,
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
         vertical_spacing=0.10,
         row_heights=[0.5, 0.5],
         subplot_titles=("PC1 explained variance", "Leadership concentration"),
@@ -611,52 +668,86 @@ def _render_heatmap_panel(loadings: pd.DataFrame):
 
     fig_aux.add_trace(
         go.Scatter(
-            x=loadings.index, y=loadings["ExplainedVar"],
+            x=loadings.index,
+            y=loadings["ExplainedVar"],
             mode="lines",
             line=dict(color="#fbbf24", width=1.2),
             hovertemplate="%{x|%Y-%m-%d}<br>ExpVar = %{y:.2%}<extra></extra>",
-            name="ExplainedVar", showlegend=False,
-        ), row=1, col=1)
+            name="ExplainedVar",
+            showlegend=False,
+        ),
+        row=1,
+        col=1,
+    )
 
     lead = leadership_stats(loadings)
     fig_aux.add_trace(
         go.Scatter(
-            x=lead.index, y=lead["Concentration"],
+            x=lead.index,
+            y=lead["Concentration"],
             mode="lines",
             line=dict(color="#06b6d4", width=1.2),
             hovertemplate="%{x|%Y-%m-%d}<br>Conc = %{y:.2%}<extra></extra>",
-            name="Concentration", showlegend=False,
-        ), row=2, col=1)
+            name="Concentration",
+            showlegend=False,
+        ),
+        row=2,
+        col=1,
+    )
 
     # 3-asset diffuse floor is 1/3 ≈ 0.333
-    fig_aux.add_hline(y=0.333, line=dict(color="rgba(255,255,255,0.25)",
-                                          dash="dot", width=1), row=2, col=1,
-                      annotation_text="diffuse floor (0.33)",
-                      annotation_position="left",
-                      annotation_font=dict(color=TEXT_DIM, size=9))
-    fig_aux.add_hline(y=0.60, line=dict(color="rgba(255,255,255,0.15)",
-                                        dash="dot", width=1), row=2, col=1)
+    fig_aux.add_hline(
+        y=0.333,
+        line=dict(color="rgba(255,255,255,0.25)", dash="dot", width=1),
+        row=2,
+        col=1,
+        annotation_text="diffuse floor (0.33)",
+        annotation_position="left",
+        annotation_font=dict(color=TEXT_DIM, size=9),
+    )
+    fig_aux.add_hline(
+        y=0.60,
+        line=dict(color="rgba(255,255,255,0.15)", dash="dot", width=1),
+        row=2,
+        col=1,
+    )
 
     fig_aux.update_layout(
-        **{**DARK_LAYOUT,
-           "height": 240, "showlegend": False,
-           "margin": dict(l=60, r=20, t=30, b=30)},
+        **{
+            **DARK_LAYOUT,
+            "height": 240,
+            "showlegend": False,
+            "margin": dict(l=60, r=20, t=30, b=30),
+        },
     )
-    fig_aux.update_xaxes(showgrid=True, gridcolor=GRID,
-                         tickfont=dict(size=9, color=TEXT_DIM), type="date")
-    fig_aux.update_yaxes(row=1, col=1, range=[0, 1.0],
-                         showgrid=True, gridcolor=GRID,
-                         tickfont=dict(size=9, color=TEXT_DIM),
-                         tickformat=".0%")
-    fig_aux.update_yaxes(row=2, col=1, range=[0, 1.0],
-                         showgrid=True, gridcolor=GRID,
-                         tickfont=dict(size=9, color=TEXT_DIM),
-                         tickformat=".0%")
+    fig_aux.update_xaxes(
+        showgrid=True,
+        gridcolor=GRID,
+        tickfont=dict(size=9, color=TEXT_DIM),
+        type="date",
+    )
+    fig_aux.update_yaxes(
+        row=1,
+        col=1,
+        range=[0, 1.0],
+        showgrid=True,
+        gridcolor=GRID,
+        tickfont=dict(size=9, color=TEXT_DIM),
+        tickformat=".0%",
+    )
+    fig_aux.update_yaxes(
+        row=2,
+        col=1,
+        range=[0, 1.0],
+        showgrid=True,
+        gridcolor=GRID,
+        tickfont=dict(size=9, color=TEXT_DIM),
+        tickformat=".0%",
+    )
     for ann in fig_aux["layout"]["annotations"]:
         ann["font"] = dict(size=10, color="#fbbf24")
 
-    st.plotly_chart(fig_aux, use_container_width=True,
-                    config={"displayModeBar": False})
+    st.plotly_chart(fig_aux, use_container_width=True, config={"displayModeBar": False})
 
     st.caption(
         "Top: how much variance the dominant credit theme is explaining "
@@ -698,13 +789,21 @@ def _render_drilldown_panel(loadings: pd.DataFrame):
 
     c1, c2 = st.columns(2)
     with c1:
-        d_start = st.date_input("From", value=default_min,
-                                min_value=full_min, max_value=full_max,
-                                key="credit_drill_start")
+        d_start = st.date_input(
+            "From",
+            value=default_min,
+            min_value=full_min,
+            max_value=full_max,
+            key="credit_drill_start",
+        )
     with c2:
-        d_end = st.date_input("To", value=full_max,
-                              min_value=full_min, max_value=full_max,
-                              key="credit_drill_end")
+        d_end = st.date_input(
+            "To",
+            value=full_max,
+            min_value=full_min,
+            max_value=full_max,
+            key="credit_drill_end",
+        )
 
     if d_start > d_end:
         st.warning("Start date is after end date.")
@@ -718,7 +817,9 @@ def _render_drilldown_panel(loadings: pd.DataFrame):
 
     # 3 asset rows + 1 ExpVar row = 4 rows
     fig = make_subplots(
-        rows=4, cols=1, shared_xaxes=True,
+        rows=4,
+        cols=1,
+        shared_xaxes=True,
         vertical_spacing=0.04,
         row_heights=[0.25] * 3 + [0.25],
         subplot_titles=tuple(
@@ -734,71 +835,113 @@ def _render_drilldown_panel(loadings: pd.DataFrame):
         if asset == ANCHOR:
             fig.add_trace(
                 go.Scatter(
-                    x=sub.index, y=abs_load.values,
-                    mode="lines", line=dict(color=COLOR_POS_BRIGHT, width=1.4),
-                    fill="tozeroy", fillcolor="rgba(59,130,246,0.20)",
+                    x=sub.index,
+                    y=abs_load.values,
+                    mode="lines",
+                    line=dict(color=COLOR_POS_BRIGHT, width=1.4),
+                    fill="tozeroy",
+                    fillcolor="rgba(59,130,246,0.20)",
                     hovertemplate=f"<b>{ASSET_LABELS[asset]}</b><br>"
-                                  "%{x|%Y-%m-%d}<br>|load| = %{y:.3f}<extra></extra>",
+                    "%{x|%Y-%m-%d}<br>|load| = %{y:.3f}<extra></extra>",
                     showlegend=False,
-                ), row=i + 1, col=1)
+                ),
+                row=i + 1,
+                col=1,
+            )
         else:
             anchor_sign = np.sign(sub[f"{ANCHOR}_load"].values)
             asset_sign = np.sign(signed_load.values)
             same_side = (anchor_sign == asset_sign).astype(float)
             same_y = np.where(same_side == 1, abs_load.values, np.nan)
-            opp_y  = np.where(same_side == 0, abs_load.values, np.nan)
+            opp_y = np.where(same_side == 0, abs_load.values, np.nan)
 
             fig.add_trace(
                 go.Scatter(
-                    x=sub.index, y=same_y,
-                    mode="lines", line=dict(color=COLOR_POS_BRIGHT, width=1.2),
-                    fill="tozeroy", fillcolor="rgba(59,130,246,0.20)",
-                    name=ASSET_LABELS[asset], showlegend=False,
+                    x=sub.index,
+                    y=same_y,
+                    mode="lines",
+                    line=dict(color=COLOR_POS_BRIGHT, width=1.2),
+                    fill="tozeroy",
+                    fillcolor="rgba(59,130,246,0.20)",
+                    name=ASSET_LABELS[asset],
+                    showlegend=False,
                     hovertemplate=f"<b>{ASSET_LABELS[asset]}</b> (same side as HY)"
-                                  "<br>%{x|%Y-%m-%d}<br>|load| = %{y:.3f}<extra></extra>",
-                ), row=i + 1, col=1)
+                    "<br>%{x|%Y-%m-%d}<br>|load| = %{y:.3f}<extra></extra>",
+                ),
+                row=i + 1,
+                col=1,
+            )
             fig.add_trace(
                 go.Scatter(
-                    x=sub.index, y=opp_y,
-                    mode="lines", line=dict(color=COLOR_NEG_BRIGHT, width=1.2),
-                    fill="tozeroy", fillcolor="rgba(249,115,22,0.20)",
-                    name=ASSET_LABELS[asset], showlegend=False,
+                    x=sub.index,
+                    y=opp_y,
+                    mode="lines",
+                    line=dict(color=COLOR_NEG_BRIGHT, width=1.2),
+                    fill="tozeroy",
+                    fillcolor="rgba(249,115,22,0.20)",
+                    name=ASSET_LABELS[asset],
+                    showlegend=False,
                     hovertemplate=f"<b>{ASSET_LABELS[asset]}</b> (opposite HY)"
-                                  "<br>%{x|%Y-%m-%d}<br>|load| = %{y:.3f}<extra></extra>",
-                ), row=i + 1, col=1)
+                    "<br>%{x|%Y-%m-%d}<br>|load| = %{y:.3f}<extra></extra>",
+                ),
+                row=i + 1,
+                col=1,
+            )
 
     fig.add_trace(
         go.Scatter(
-            x=sub.index, y=sub["ExplainedVar"].values,
-            mode="lines", line=dict(color="#fbbf24", width=1.2),
-            fill="tozeroy", fillcolor="rgba(251,191,36,0.10)",
+            x=sub.index,
+            y=sub["ExplainedVar"].values,
+            mode="lines",
+            line=dict(color="#fbbf24", width=1.2),
+            fill="tozeroy",
+            fillcolor="rgba(251,191,36,0.10)",
             hovertemplate="%{x|%Y-%m-%d}<br>ExpVar = %{y:.2%}<extra></extra>",
             showlegend=False,
-        ), row=4, col=1)
+        ),
+        row=4,
+        col=1,
+    )
 
     fig.update_layout(
-        **{**DARK_LAYOUT,
-           "height": 520, "showlegend": False,
-           "margin": dict(l=60, r=20, t=30, b=30)},
+        **{
+            **DARK_LAYOUT,
+            "height": 520,
+            "showlegend": False,
+            "margin": dict(l=60, r=20, t=30, b=30),
+        },
     )
-    fig.update_xaxes(showgrid=True, gridcolor=GRID,
-                     tickfont=dict(size=9, color=TEXT_DIM), type="date")
+    fig.update_xaxes(
+        showgrid=True,
+        gridcolor=GRID,
+        tickfont=dict(size=9, color=TEXT_DIM),
+        type="date",
+    )
     for r in range(1, 4):
-        fig.update_yaxes(row=r, col=1, range=[0, 1.0],
-                         showgrid=True, gridcolor=GRID,
-                         tickfont=dict(size=8, color=TEXT_DIM),
-                         tickvals=[0, 0.5, 1.0])
-    fig.update_yaxes(row=4, col=1, range=[0, 1.0],
-                     showgrid=True, gridcolor=GRID,
-                     tickfont=dict(size=8, color=TEXT_DIM),
-                     tickformat=".0%")
+        fig.update_yaxes(
+            row=r,
+            col=1,
+            range=[0, 1.0],
+            showgrid=True,
+            gridcolor=GRID,
+            tickfont=dict(size=8, color=TEXT_DIM),
+            tickvals=[0, 0.5, 1.0],
+        )
+    fig.update_yaxes(
+        row=4,
+        col=1,
+        range=[0, 1.0],
+        showgrid=True,
+        gridcolor=GRID,
+        tickfont=dict(size=8, color=TEXT_DIM),
+        tickformat=".0%",
+    )
     for ann in fig["layout"]["annotations"]:
         ann["font"] = dict(size=10, color="#fbbf24")
         ann["x"] = 0.0
         ann["xanchor"] = "left"
 
-    st.plotly_chart(fig, use_container_width=True,
-                    config={"displayModeBar": False})
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     st.caption(
         f"Selected range: {d_start} → {d_end} · {len(sub)} days · "
@@ -832,7 +975,9 @@ def _render_correlations_panel(returns: pd.DataFrame):
     with cc1:
         window = st.slider(
             "Window (trading days)",
-            min_value=5, max_value=252, step=1,
+            min_value=5,
+            max_value=252,
+            step=1,
             value=st.session_state.get("credit_corr_window", 20),
             key="credit_corr_window",
         )
@@ -841,7 +986,8 @@ def _render_correlations_panel(returns: pd.DataFrame):
             "Weighting",
             options=["equal", "ewm"],
             index=["equal", "ewm"].index(
-                st.session_state.get("credit_corr_weighting", "equal")),
+                st.session_state.get("credit_corr_weighting", "equal")
+            ),
             format_func=lambda x: {"equal": "Equal", "ewm": "Exp (W/3)"}[x],
             key="credit_corr_weighting",
             horizontal=True,
@@ -860,33 +1006,40 @@ def _render_correlations_panel(returns: pd.DataFrame):
             M[i, j] = v
             M[j, i] = v
 
-    fig_mat = go.Figure(data=go.Heatmap(
-        z=np.abs(M),
-        x=[ASSET_LABELS[a] for a in ASSETS],
-        y=[ASSET_LABELS[a] for a in ASSETS],
-        colorscale=GRAYSCALE_MAG,
-        zmin=0, zmax=1,
-        text=[[f"{v:+.2f}" if not np.isnan(v) else "" for v in row] for row in M],
-        texttemplate="%{text}",
-        textfont=dict(color="#fbbf24", size=12, family="JetBrains Mono"),
-        colorbar=dict(
-            title=dict(text="|ρ|", font=dict(color=TEXT_DIM, size=10)),
-            tickfont=dict(color=TEXT_DIM, size=9),
-            tickvals=[0, 0.25, 0.5, 0.75, 1.0],
-            len=0.85, thickness=10,
-        ),
-        hovertemplate="%{y} vs %{x}<br>ρ = %{text}<extra></extra>",
-    ))
+    fig_mat = go.Figure(
+        data=go.Heatmap(
+            z=np.abs(M),
+            x=[ASSET_LABELS[a] for a in ASSETS],
+            y=[ASSET_LABELS[a] for a in ASSETS],
+            colorscale=GRAYSCALE_MAG,
+            zmin=0,
+            zmax=1,
+            text=[[f"{v:+.2f}" if not np.isnan(v) else "" for v in row] for row in M],
+            texttemplate="%{text}",
+            textfont=dict(color="#fbbf24", size=12, family="JetBrains Mono"),
+            colorbar=dict(
+                title=dict(text="|ρ|", font=dict(color=TEXT_DIM, size=10)),
+                tickfont=dict(color=TEXT_DIM, size=9),
+                tickvals=[0, 0.25, 0.5, 0.75, 1.0],
+                len=0.85,
+                thickness=10,
+            ),
+            hovertemplate="%{y} vs %{x}<br>ρ = %{text}<extra></extra>",
+        )
+    )
     fig_mat.update_layout(
-        **{**DARK_LAYOUT,
-           "height": 280, "showlegend": False,
-           "margin": dict(l=90, r=20, t=10, b=40),
-           "xaxis": dict(showgrid=False, tickfont=dict(size=10, color=TEXT)),
-           "yaxis": dict(showgrid=False, tickfont=dict(size=10, color=TEXT),
-                         autorange="reversed"),
-        })
-    st.plotly_chart(fig_mat, use_container_width=True,
-                    config={"displayModeBar": False})
+        **{
+            **DARK_LAYOUT,
+            "height": 280,
+            "showlegend": False,
+            "margin": dict(l=90, r=20, t=10, b=40),
+            "xaxis": dict(showgrid=False, tickfont=dict(size=10, color=TEXT)),
+            "yaxis": dict(
+                showgrid=False, tickfont=dict(size=10, color=TEXT), autorange="reversed"
+            ),
+        }
+    )
+    st.plotly_chart(fig_mat, use_container_width=True, config={"displayModeBar": False})
 
     rolled = rolling_pairwise_corrs(returns, window=window, weighting=weighting)
 
@@ -896,29 +1049,53 @@ def _render_correlations_panel(returns: pd.DataFrame):
     for i, key in enumerate(all_pair_keys()):
         a, b = key.split("_vs_")
         label = f"{ASSET_LABELS[a]} vs {ASSET_LABELS[b]}"
-        fig.add_trace(go.Scatter(
-            x=rolled.index, y=rolled[key],
-            mode="lines", name=label,
-            line=dict(color=PAIR_PALETTE[i], width=1.3),
-            hovertemplate=f"<b>{label}</b><br>%{{x|%Y-%m-%d}}: %{{y:.3f}}<extra></extra>",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=rolled.index,
+                y=rolled[key],
+                mode="lines",
+                name=label,
+                line=dict(color=PAIR_PALETTE[i], width=1.3),
+                hovertemplate=f"<b>{label}</b><br>%{{x|%Y-%m-%d}}: %{{y:.3f}}<extra></extra>",
+            )
+        )
     fig.add_hline(y=0, line=dict(color="rgba(255,255,255,0.2)", width=1))
 
     fig.update_layout(
         **DARK_LAYOUT,
         height=380,
         showlegend=True,
-        legend=dict(orientation="h", yanchor="top", y=-0.20,
-                    xanchor="left", x=0,
-                    bgcolor="rgba(0,0,0,0)", font=dict(size=10, color="#ccc")),
-        xaxis=dict(showgrid=True, gridcolor=GRID, zeroline=False,
-                   tickfont=dict(size=9, color=TEXT_DIM),
-                   rangeslider=dict(visible=True, bgcolor="#1a1a1a",
-                                    bordercolor="#fbbf24", borderwidth=1, thickness=0.04),
-                   type="date"),
-        yaxis=dict(range=[-1, 1], showgrid=True, gridcolor=GRID, zeroline=False,
-                   tickfont=dict(size=9, color=TEXT_DIM),
-                   tickvals=[-1, -0.5, 0, 0.5, 1]),
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.20,
+            xanchor="left",
+            x=0,
+            bgcolor="rgba(0,0,0,0)",
+            font=dict(size=10, color="#ccc"),
+        ),
+        xaxis=dict(
+            showgrid=True,
+            gridcolor=GRID,
+            zeroline=False,
+            tickfont=dict(size=9, color=TEXT_DIM),
+            rangeslider=dict(
+                visible=True,
+                bgcolor="#1a1a1a",
+                bordercolor="#fbbf24",
+                borderwidth=1,
+                thickness=0.04,
+            ),
+            type="date",
+        ),
+        yaxis=dict(
+            range=[-1, 1],
+            showgrid=True,
+            gridcolor=GRID,
+            zeroline=False,
+            tickfont=dict(size=9, color=TEXT_DIM),
+            tickvals=[-1, -0.5, 0, 0.5, 1],
+        ),
         margin=dict(l=40, r=20, t=10, b=80),
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
@@ -949,7 +1126,9 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
     with pc1:
         window = st.slider(
             "Window (trading days)",
-            min_value=5, max_value=252, step=1,
+            min_value=5,
+            max_value=252,
+            step=1,
             value=st.session_state.get("credit_pca_window", 20),
             key="credit_pca_window",
         )
@@ -966,7 +1145,8 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
             "Weighting",
             options=["equal", "ewm"],
             index=["equal", "ewm"].index(
-                st.session_state.get("credit_pca_weighting", "equal")),
+                st.session_state.get("credit_pca_weighting", "equal")
+            ),
             format_func=lambda x: {"equal": "Equal", "ewm": "Exp (W/3)"}[x],
             key="credit_pca_weighting",
             horizontal=True,
@@ -976,9 +1156,12 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
             "Sign convention",
             options=["standard", "procrustes"],
             index=["standard", "procrustes"].index(
-                st.session_state.get("credit_pca_method", "standard")),
-            format_func=lambda x: {"standard": "Per-day HY+",
-                                   "procrustes": "Procrustes"}[x],
+                st.session_state.get("credit_pca_method", "standard")
+            ),
+            format_func=lambda x: {
+                "standard": "Per-day HY+",
+                "procrustes": "Procrustes",
+            }[x],
             key="credit_pca_method",
             horizontal=True,
         )
@@ -1035,8 +1218,11 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
             )
 
     roll = rolling_pca_loadings(
-        returns, window=window, weighting=weighting,
-        pca_method=pca_method, presmooth_halflife=presmooth_halflife,
+        returns,
+        window=window,
+        weighting=weighting,
+        pca_method=pca_method,
+        presmooth_halflife=presmooth_halflife,
     )
 
     low_conf_mask = (roll["EigGap"] < 0.10) | (roll["ExplainedVar"] < 0.50)
@@ -1050,41 +1236,72 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
                 band_start = date_
                 in_band = True
             elif not is_low and in_band:
-                fig.add_vrect(x0=band_start, x1=date_,
-                              fillcolor="rgba(120,120,120,0.12)",
-                              line=dict(width=0), layer="below")
+                fig.add_vrect(
+                    x0=band_start,
+                    x1=date_,
+                    fillcolor="rgba(120,120,120,0.12)",
+                    line=dict(width=0),
+                    layer="below",
+                )
                 in_band = False
         if in_band:
-            fig.add_vrect(x0=band_start, x1=roll.index[-1],
-                          fillcolor="rgba(120,120,120,0.12)",
-                          line=dict(width=0), layer="below")
+            fig.add_vrect(
+                x0=band_start,
+                x1=roll.index[-1],
+                fillcolor="rgba(120,120,120,0.12)",
+                line=dict(width=0),
+                layer="below",
+            )
 
     for asset in ASSETS:
-        fig.add_trace(go.Scatter(
-            x=roll.index, y=roll[f"{asset}_load"],
-            mode="lines",
-            name=f"{ASSET_LABELS[asset]} weight",
-            line=dict(color=ASSET_COLOR[asset], width=1.4),
-            hovertemplate=f"<b>{ASSET_LABELS[asset]}</b><br>"
-                          "%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=roll.index,
+                y=roll[f"{asset}_load"],
+                mode="lines",
+                name=f"{ASSET_LABELS[asset]} weight",
+                line=dict(color=ASSET_COLOR[asset], width=1.4),
+                hovertemplate=f"<b>{ASSET_LABELS[asset]}</b><br>"
+                "%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
+            )
+        )
     fig.add_hline(y=0, line=dict(color="rgba(255,255,255,0.2)", width=1))
 
     fig.update_layout(
         **DARK_LAYOUT,
         height=360,
         showlegend=True,
-        legend=dict(orientation="h", yanchor="top", y=-0.15,
-                    xanchor="left", x=0,
-                    bgcolor="rgba(0,0,0,0)", font=dict(size=10, color="#ccc")),
-        xaxis=dict(showgrid=True, gridcolor=GRID, zeroline=False,
-                   tickfont=dict(size=9, color=TEXT_DIM),
-                   rangeslider=dict(visible=True, bgcolor="#1a1a1a",
-                                    bordercolor="#fbbf24", borderwidth=1, thickness=0.04),
-                   type="date"),
-        yaxis=dict(range=[-1, 1], showgrid=True, gridcolor=GRID, zeroline=False,
-                   tickfont=dict(size=9, color=TEXT_DIM),
-                   tickvals=[-1, -0.5, 0, 0.5, 1]),
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.15,
+            xanchor="left",
+            x=0,
+            bgcolor="rgba(0,0,0,0)",
+            font=dict(size=10, color="#ccc"),
+        ),
+        xaxis=dict(
+            showgrid=True,
+            gridcolor=GRID,
+            zeroline=False,
+            tickfont=dict(size=9, color=TEXT_DIM),
+            rangeslider=dict(
+                visible=True,
+                bgcolor="#1a1a1a",
+                bordercolor="#fbbf24",
+                borderwidth=1,
+                thickness=0.04,
+            ),
+            type="date",
+        ),
+        yaxis=dict(
+            range=[-1, 1],
+            showgrid=True,
+            gridcolor=GRID,
+            zeroline=False,
+            tickfont=dict(size=9, color=TEXT_DIM),
+            tickvals=[-1, -0.5, 0, 0.5, 1],
+        ),
         margin=dict(l=40, r=20, t=10, b=80),
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
@@ -1117,8 +1334,11 @@ def _render_regime_panel(loadings: pd.DataFrame):
           Persistence below <b>{pers:.2f}</b> →
           <span style="color:#e5e7eb;font-weight:600;">Transitioning</span>.
         </div>
-        """.format(var=EXP_VAR_THRESHOLD, mag=LOADING_MAGNITUDE_THRESHOLD,
-                   pers=PERSISTENCE_THRESHOLD),
+        """.format(
+            var=EXP_VAR_THRESHOLD,
+            mag=LOADING_MAGNITUDE_THRESHOLD,
+            pers=PERSISTENCE_THRESHOLD,
+        ),
         unsafe_allow_html=True,
     )
 
@@ -1138,12 +1358,18 @@ def _render_regime_panel(loadings: pd.DataFrame):
         else:
             p = info["persistence"]
             pers_str = f"{p:+.3f}"
-            if p > 0.99:    pers_label = "very stable"
-            elif p > 0.95:  pers_label = "stable"
-            elif p > 0.85:  pers_label = "drifting"
-            elif p > 0.70:  pers_label = "rotating"
-            elif p > 0.0:   pers_label = "rotating fast"
-            else:           pers_label = "flipped"
+            if p > 0.99:
+                pers_label = "very stable"
+            elif p > 0.95:
+                pers_label = "stable"
+            elif p > 0.85:
+                pers_label = "drifting"
+            elif p > 0.70:
+                pers_label = "rotating"
+            elif p > 0.0:
+                pers_label = "rotating fast"
+            else:
+                pers_label = "flipped"
 
         loadings_html = " · ".join(
             f"{ASSET_LABELS[a]} <span style='color:{COLOR_POS_BRIGHT if info['loadings'][a] >= 0 else COLOR_NEG_BRIGHT};'>"
@@ -1207,35 +1433,18 @@ def _render_regime_panel(loadings: pd.DataFrame):
 
     runs = regime_runs(regimes)
 
-    fig_stripe = go.Figure()
-    for _, run in runs.iterrows():
-        width_ms = (run["End"] - run["Start"] + pd.Timedelta(days=1)).total_seconds() * 1000.0
-        fig_stripe.add_trace(go.Bar(
-            x=[width_ms],
-            y=["Regime"],
-            base=run["Start"].isoformat(),
-            orientation="h",
-            marker=dict(color=regime_color(run["Regime"]),
-                        line=dict(color=BG, width=0.5)),
-            hovertemplate=(
-                f"<b>{run['Regime']}</b><br>"
-                f"{run['Start'].strftime('%Y-%m-%d')} → "
-                f"{run['End'].strftime('%Y-%m-%d')}<br>"
-                f"{run['Duration']} day(s)<extra></extra>"
-            ),
-            showlegend=False,
-        ))
-    fig_stripe.update_layout(
-        **{**DARK_LAYOUT,
-           "height": 90, "barmode": "overlay", "showlegend": False,
-           "margin": dict(l=10, r=10, t=10, b=30),
-           "yaxis": dict(visible=False, fixedrange=True),
-           "xaxis": dict(type="date", showgrid=False,
-                         tickfont=dict(size=10, color=TEXT_DIM)),
-        }
+    fig_stripe = plot_regime_timeline(
+        runs=runs,
+        color_func=regime_color,
+        x_min=regimes.index.min(),
+        x_max=regimes.index.max(),
+        height=120,
+        dark_layout=DARK_LAYOUT,
+        text_dim=TEXT_DIM,
     )
-    st.plotly_chart(fig_stripe, use_container_width=True,
-                    config={"displayModeBar": False})
+    st.plotly_chart(
+        fig_stripe, use_container_width=True, config={"displayModeBar": False}
+    )
 
     legend_html = "<div style='display:flex;flex-wrap:wrap;gap:1rem;font-size:11px;color:#bbb;margin-bottom:1rem;'>"
     for asset in ASSETS:
@@ -1269,35 +1478,50 @@ def _render_regime_panel(loadings: pd.DataFrame):
     )
 
     fig_pers = go.Figure()
-    fig_pers.add_trace(go.Scatter(
-        x=persistence.index, y=persistence.values,
-        mode="lines", line=dict(color="#06b6d4", width=1.2),
-        name="Persistence",
-        hovertemplate="%{x|%Y-%m-%d}<br>cos = %{y:.4f}<extra></extra>",
-    ))
+    fig_pers.add_trace(
+        go.Scatter(
+            x=persistence.index,
+            y=persistence.values,
+            mode="lines",
+            line=dict(color="#06b6d4", width=1.2),
+            name="Persistence",
+            hovertemplate="%{x|%Y-%m-%d}<br>cos = %{y:.4f}<extra></extra>",
+        )
+    )
     for y, label, color in [
         (0.99, "very stable (≥0.99)", "rgba(147,197,253,0.30)"),
-        (0.95, "stable (≥0.95)",      "rgba(96,165,250,0.25)"),
-        (0.85, "drifting (≥0.85)",    "rgba(37,99,235,0.20)"),
+        (0.95, "stable (≥0.95)", "rgba(96,165,250,0.25)"),
+        (0.85, "drifting (≥0.85)", "rgba(37,99,235,0.20)"),
     ]:
-        fig_pers.add_hline(y=y, line=dict(color=color, dash="dot", width=1),
-                           annotation_text=label, annotation_position="left",
-                           annotation_font=dict(color=TEXT_DIM, size=9))
-    fig_pers.add_hline(y=0,
-                       line=dict(color="rgba(249,115,22,0.4)", width=1, dash="dash"))
+        fig_pers.add_hline(
+            y=y,
+            line=dict(color=color, dash="dot", width=1),
+            annotation_text=label,
+            annotation_position="left",
+            annotation_font=dict(color=TEXT_DIM, size=9),
+        )
+    fig_pers.add_hline(
+        y=0, line=dict(color="rgba(249,115,22,0.4)", width=1, dash="dash")
+    )
 
     fig_pers.update_layout(
-        **{**DARK_LAYOUT, "height": 220, "showlegend": False,
-           "margin": dict(l=10, r=10, t=10, b=30),
-           "yaxis": dict(range=[-1.05, 1.05], gridcolor=GRID,
-                         tickfont=dict(size=10, color=TEXT_DIM),
-                         tickvals=[-1, -0.5, 0, 0.5, 1]),
-           "xaxis": dict(gridcolor=GRID,
-                         tickfont=dict(size=10, color=TEXT_DIM)),
+        **{
+            **DARK_LAYOUT,
+            "height": 220,
+            "showlegend": False,
+            "margin": dict(l=10, r=10, t=10, b=30),
+            "yaxis": dict(
+                range=[-1.05, 1.05],
+                gridcolor=GRID,
+                tickfont=dict(size=10, color=TEXT_DIM),
+                tickvals=[-1, -0.5, 0, 0.5, 1],
+            ),
+            "xaxis": dict(gridcolor=GRID, tickfont=dict(size=10, color=TEXT_DIM)),
         }
     )
-    st.plotly_chart(fig_pers, use_container_width=True,
-                    config={"displayModeBar": False})
+    st.plotly_chart(
+        fig_pers, use_container_width=True, config={"displayModeBar": False}
+    )
 
     # Transitions
     st.markdown(
@@ -1314,16 +1538,23 @@ def _render_regime_panel(loadings: pd.DataFrame):
     if trans.empty:
         st.caption("No transitions in this period.")
     else:
+
         def _fmt_trans_row(row):
             from_color = regime_color(row["From"])
             to_color = regime_color(row["To"])
-            pers_str = f"{row['Persistence']:+.3f}" if row["Persistence"] is not None else "—"
+            pers_str = (
+                f"{row['Persistence']:+.3f}" if row["Persistence"] is not None else "—"
+            )
             if row["Persistence"] is not None:
                 p = row["Persistence"]
-                if p < 0.0:    pers_color = SEVERITY_MAX
-                elif p < 0.5:  pers_color = SEVERITY_STRONG
-                elif p < 0.85: pers_color = SEVERITY_MILD
-                else:          pers_color = SEVERITY_LIGHT
+                if p < 0.0:
+                    pers_color = SEVERITY_MAX
+                elif p < 0.5:
+                    pers_color = SEVERITY_STRONG
+                elif p < 0.85:
+                    pers_color = SEVERITY_MILD
+                else:
+                    pers_color = SEVERITY_LIGHT
             else:
                 pers_color = "#888"
             return (
@@ -1384,8 +1615,7 @@ def _render_regime_panel(loadings: pd.DataFrame):
         return
 
     def _fmt_stats_row(row):
-        active_dot = ("<span style='color:#3b82f6;'>●</span>"
-                      if row["Active"] else "")
+        active_dot = "<span style='color:#3b82f6;'>●</span>" if row["Active"] else ""
         return (
             f"<tr>"
             f"<td style='padding:6px 10px;'><span style='display:inline-block;width:10px;"

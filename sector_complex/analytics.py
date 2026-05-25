@@ -35,9 +35,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-
-ASSETS = ["XLK", "XLF", "XLE", "XLV", "XLI", "XLY",
-          "XLP", "XLU", "XLB", "XLRE", "XLC"]
+ASSETS = ["XLK", "XLF", "XLE", "XLV", "XLI", "XLY", "XLP", "XLU", "XLB", "XLRE", "XLC"]
 
 ASSET_LABELS = {
     "XLK": "Technology",
@@ -63,8 +61,9 @@ BENCHMARK = "SPY"
 LOAD_COLS = [f"{a}_load" for a in ASSETS]
 
 
-def compute_returns(prices: pd.DataFrame, vol_scale: bool = False,
-                    vol_window: int = 60) -> pd.DataFrame:
+def compute_returns(
+    prices: pd.DataFrame, vol_scale: bool = False, vol_window: int = 60
+) -> pd.DataFrame:
     """All sector ETFs: log returns. Benchmark excluded from this frame."""
     out = pd.DataFrame(index=prices.index)
     for a in ASSETS:
@@ -73,8 +72,7 @@ def compute_returns(prices: pd.DataFrame, vol_scale: bool = False,
     out = out.dropna()
 
     if vol_scale:
-        rv = out.rolling(window=vol_window,
-                         min_periods=max(20, vol_window // 2)).std()
+        rv = out.rolling(window=vol_window, min_periods=max(20, vol_window // 2)).std()
         out = (out / rv).dropna()
 
     return out
@@ -139,7 +137,7 @@ def avg_pairwise_correlation(returns: pd.DataFrame, window: int = 60) -> pd.Data
 
     out = []
     for end in range(window, len(sub_all) + 1):
-        sub = sub_all.iloc[end - window:end]
+        sub = sub_all.iloc[end - window : end]
         if sub.isna().any().any():
             continue
         C = sub.corr().values
@@ -152,8 +150,9 @@ def avg_pairwise_correlation(returns: pd.DataFrame, window: int = 60) -> pd.Data
     return pd.DataFrame(out).set_index("Date")
 
 
-def correlation_regime_summary(corr_series: pd.DataFrame,
-                               pctile_lookback: int = 504) -> dict:
+def correlation_regime_summary(
+    corr_series: pd.DataFrame, pctile_lookback: int = 504
+) -> dict:
     """
     Summarize the latest avg-correlation reading as a percentile vs trailing
     history (default ~2 years of trading days). Returns level, percentile,
@@ -198,13 +197,18 @@ def correlation_regime_summary(corr_series: pd.DataFrame,
 # ---------------------------------------------------------------------------
 # 2. Sector PCA
 # ---------------------------------------------------------------------------
-def pca_dominant_theme(returns: pd.DataFrame, window: int = 60,
-                       weighting: str = "equal") -> dict:
+def pca_dominant_theme(
+    returns: pd.DataFrame, window: int = 60, weighting: str = "equal"
+) -> dict:
     cols = [a for a in ASSETS if a in returns.columns]
     sub = returns[cols].tail(window).dropna()
     if len(sub) < window // 2:
-        return {"explained_variance": np.nan, "loadings": {},
-                "n_obs": len(sub), "eig_gap": np.nan}
+        return {
+            "explained_variance": np.nan,
+            "loadings": {},
+            "n_obs": len(sub),
+            "eig_gap": np.nan,
+        }
 
     z = ((sub - sub.mean()) / sub.std(ddof=1)).values
     w = _make_weights(len(sub), weighting)
@@ -231,10 +235,13 @@ def pca_dominant_theme(returns: pd.DataFrame, window: int = 60,
     }
 
 
-def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60,
-                         weighting: str = "equal",
-                         pca_method: str = "standard",
-                         presmooth_halflife: int = 0) -> pd.DataFrame:
+def rolling_pca_loadings(
+    returns: pd.DataFrame,
+    window: int = 60,
+    weighting: str = "equal",
+    pca_method: str = "standard",
+    presmooth_halflife: int = 0,
+) -> pd.DataFrame:
     cols = [a for a in ASSETS if a in returns.columns]
     returns = returns[cols]
     anchor_idx = cols.index(ANCHOR) if ANCHOR in cols else 0
@@ -249,7 +256,7 @@ def rolling_pca_loadings(returns: pd.DataFrame, window: int = 60,
     prev_pc1 = None
 
     for end_idx in range(window, len(returns_used) + 1):
-        sub = returns_used.iloc[end_idx - window:end_idx]
+        sub = returns_used.iloc[end_idx - window : end_idx]
         if sub.isna().any().any():
             continue
         std = sub.std(ddof=1)
@@ -308,13 +315,18 @@ def leadership_stats(loadings_df: pd.DataFrame) -> pd.DataFrame:
     if loadings_df.empty or not present_cols:
         return pd.DataFrame(
             index=loadings_df.index,
-            columns=["Leader", "LeaderLabel", "LeaderLoad",
-                     "Concentration", "SignPattern"],
+            columns=[
+                "Leader",
+                "LeaderLabel",
+                "LeaderLoad",
+                "Concentration",
+                "SignPattern",
+            ],
         )
 
     L = loadings_df[present_cols].values
     abs_L = np.abs(L)
-    sq = L ** 2
+    sq = L**2
     sq_sum = sq.sum(axis=1)
     sq_sum_safe = np.where(sq_sum > 0, sq_sum, 1.0)
 
@@ -326,22 +338,27 @@ def leadership_stats(loadings_df: pd.DataFrame) -> pd.DataFrame:
 
     def _sign_str(row: np.ndarray) -> str:
         return "".join("+" if v >= 0 else "−" for v in row)
+
     sign_patterns = [_sign_str(row) for row in L]
 
-    return pd.DataFrame({
-        "Leader":        leader_keys,
-        "LeaderLabel":   leader_labels,
-        "LeaderLoad":    leader_loads,
-        "Concentration": concentration,
-        "SignPattern":   sign_patterns,
-    }, index=loadings_df.index)
+    return pd.DataFrame(
+        {
+            "Leader": leader_keys,
+            "LeaderLabel": leader_labels,
+            "LeaderLoad": leader_loads,
+            "Concentration": concentration,
+            "SignPattern": sign_patterns,
+        },
+        index=loadings_df.index,
+    )
 
 
 # ---------------------------------------------------------------------------
 # 3. Relative strength leadership
 # ---------------------------------------------------------------------------
-def relative_strength(returns: pd.DataFrame, bench_ret: pd.Series,
-                      window: int = 60) -> pd.DataFrame:
+def relative_strength(
+    returns: pd.DataFrame, bench_ret: pd.Series, window: int = 60
+) -> pd.DataFrame:
     """
     Trailing cumulative return of each sector minus the benchmark's
     cumulative return over the same window. Sorted strongest to weakest.
@@ -354,17 +371,19 @@ def relative_strength(returns: pd.DataFrame, bench_ret: pd.Series,
     # Align benchmark to the same window
     bench = bench_ret.reindex(sec.index).fillna(0.0)
 
-    cum_sec = (np.exp(sec.sum()) - 1.0)        # log-returns → simple cum return
+    cum_sec = np.exp(sec.sum()) - 1.0  # log-returns → simple cum return
     cum_bench = float(np.exp(bench.sum()) - 1.0)
 
     rs = (cum_sec - cum_bench).sort_values(ascending=False)
 
-    return pd.DataFrame({
-        "Sector": rs.index,
-        "Label": [ASSET_LABELS[s] for s in rs.index],
-        "RelStrength": rs.values,
-        "AbsReturn": [float(cum_sec[s]) for s in rs.index],
-    }).reset_index(drop=True)
+    return pd.DataFrame(
+        {
+            "Sector": rs.index,
+            "Label": [ASSET_LABELS[s] for s in rs.index],
+            "RelStrength": rs.values,
+            "AbsReturn": [float(cum_sec[s]) for s in rs.index],
+        }
+    ).reset_index(drop=True)
 
 
 def cyclical_defensive_spread(returns: pd.DataFrame, window: int = 60) -> dict:
@@ -405,9 +424,9 @@ def cyclical_defensive_spread(returns: pd.DataFrame, window: int = 60) -> dict:
 # This replaces the single-leader PCA labeling, which is meaningless across
 # 11 diffuse sectors. The two axes give four interpretable quadrant regimes.
 # ---------------------------------------------------------------------------
-RISK_DEADBAND = 0.01          # |spread| below this → risk-neutral
-CORR_MACRO_PCTILE = 60.0      # corr percentile ≥ this → Macro
-CORR_MICRO_PCTILE = 40.0      # corr percentile ≤ this → Micro
+RISK_DEADBAND = 0.01  # |spread| below this → risk-neutral
+CORR_MACRO_PCTILE = 60.0  # corr percentile ≥ this → Macro
+CORR_MICRO_PCTILE = 40.0  # corr percentile ≤ this → Micro
 
 
 def rolling_cyc_def_spread(returns: pd.DataFrame, window: int = 60) -> pd.Series:
@@ -422,8 +441,8 @@ def rolling_cyc_def_spread(returns: pd.DataFrame, window: int = 60) -> pd.Series
     out = []
     idx = []
     for end in range(window, len(returns) + 1):
-        c = float(np.exp(cyc_mean.iloc[end - window:end].sum()) - 1.0)
-        d = float(np.exp(dfn_mean.iloc[end - window:end].sum()) - 1.0)
+        c = float(np.exp(cyc_mean.iloc[end - window : end].sum()) - 1.0)
+        d = float(np.exp(dfn_mean.iloc[end - window : end].sum()) - 1.0)
         out.append(c - d)
         idx.append(returns.index[end - 1])
     return pd.Series(out, index=idx, name="Spread")
@@ -457,7 +476,7 @@ def classify_sector_regime(
     # rolling percentile of correlation vs trailing lookback
     def _pctile_at(i: int) -> float:
         lo = max(0, i - pctile_lookback + 1)
-        window_vals = corr.iloc[lo:i + 1]
+        window_vals = corr.iloc[lo : i + 1]
         cur = corr.iloc[i]
         if window_vals.empty or pd.isna(cur):
             return np.nan
@@ -556,8 +575,7 @@ def sector_regime_info(
             break
     days_in = int((regime_series.index >= start_date).sum())
 
-    latest_spread = (float(spread_series.iloc[-1])
-                     if not spread_series.empty else np.nan)
+    latest_spread = float(spread_series.iloc[-1]) if not spread_series.empty else np.nan
 
     return {
         "regime": current,
@@ -572,15 +590,15 @@ def sector_regime_info(
 
 
 SECTOR_REGIME_COLOR = {
-    "Risk-On / Macro":  "#22c55e",   # green — broad rally
-    "Risk-On / Micro":  "#14b8a6",   # teal — narrow/selective risk
-    "Risk-On / Bal":    "#4ade80",
-    "Risk-Off / Macro": "#ef4444",   # red — correlated selloff
-    "Risk-Off / Micro": "#f97316",   # orange — dispersed defensive
-    "Risk-Off / Bal":   "#fb923c",
-    "Neutral / Macro":  "#6b7280",
-    "Neutral / Micro":  "#9ca3af",
-    "Neutral / Bal":    "#525252",
+    "Risk-On / Macro": "#22c55e",  # green — broad rally
+    "Risk-On / Micro": "#14b8a6",  # teal — narrow/selective risk
+    "Risk-On / Bal": "#4ade80",
+    "Risk-Off / Macro": "#ef4444",  # red — correlated selloff
+    "Risk-Off / Micro": "#f97316",  # orange — dispersed defensive
+    "Risk-Off / Bal": "#fb923c",
+    "Neutral / Macro": "#6b7280",
+    "Neutral / Micro": "#9ca3af",
+    "Neutral / Bal": "#525252",
 }
 
 

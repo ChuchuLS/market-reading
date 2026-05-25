@@ -16,39 +16,52 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from shared.plots import plot_regime_timeline
 from theming import BG, GRID, TEXT, TEXT_DIM, DARK_LAYOUT
 from cross_asset.analytics import (
     compute_returns,
-    rolling_pairwise_corrs, latest_pairwise_corrs,
-    pca_dominant_theme, rolling_pca_loadings,
-    correlation_story, loading_label,
+    rolling_pairwise_corrs,
+    latest_pairwise_corrs,
+    pca_dominant_theme,
+    rolling_pca_loadings,
+    correlation_story,
+    loading_label,
     __ANALYTICS_VERSION__,
 )
 from cross_asset.regime import (
-    classify_loadings_series, cosine_persistence,
-    soft_scores, apply_persistence_filter, transitions_log,
-    regime_runs, regime_stats, current_regime_info,
-    BUCKET_ORDER, BUCKET_DISPLAY, BUCKET_COLOR,
-    LOADING_MAGNITUDE_THRESHOLD, EXP_VAR_THRESHOLD, PERSISTENCE_THRESHOLD,
+    classify_loadings_series,
+    cosine_persistence,
+    soft_scores,
+    apply_persistence_filter,
+    transitions_log,
+    regime_runs,
+    regime_stats,
+    current_regime_info,
+    BUCKET_ORDER,
+    BUCKET_DISPLAY,
+    BUCKET_COLOR,
+    LOADING_MAGNITUDE_THRESHOLD,
+    EXP_VAR_THRESHOLD,
+    PERSISTENCE_THRESHOLD,
     __REGIME_VERSION__,
 )
 
 DATA_PATH = Path(__file__).parent / "data" / "CROSSASSET.xlsx"
 
 # OFR-inspired palette — amber/magenta/cyan/lime
-COLOR_SPX     = "#84cc16"   # lime
-COLOR_UST10Y  = "#06b6d4"   # cyan
-COLOR_DXY     = "#fb923c"   # orange/amber
-COLOR_PC1     = "#fbbf24"   # amber (for linkage / dominant theme)
+COLOR_SPX = "#84cc16"  # lime
+COLOR_UST10Y = "#06b6d4"  # cyan
+COLOR_DXY = "#fb923c"  # orange/amber
+COLOR_PC1 = "#fbbf24"  # amber (for linkage / dominant theme)
 
 PAIR_COLORS = {
-    "SPX_vs_USGG10YR": "#ec4899",   # magenta
-    "SPX_vs_DXY":      "#06b6d4",   # cyan
-    "USGG10YR_vs_DXY": "#fb923c",   # amber
+    "SPX_vs_USGG10YR": "#ec4899",  # magenta
+    "SPX_vs_DXY": "#06b6d4",  # cyan
+    "USGG10YR_vs_DXY": "#fb923c",  # amber
 }
 PAIR_LABELS = {
     "SPX_vs_USGG10YR": "SPX vs UST 10Y",
-    "SPX_vs_DXY":      "SPX vs DXY",
+    "SPX_vs_DXY": "SPX vs DXY",
     "USGG10YR_vs_DXY": "UST 10Y vs DXY",
 }
 
@@ -91,8 +104,7 @@ def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
                 break
     if date_col is None:
         raise ValueError(
-            f"Couldn't find a Date column in CROSSASSET.xlsx. "
-            f"Columns found: {cols}"
+            f"Couldn't find a Date column in CROSSASSET.xlsx. " f"Columns found: {cols}"
         )
 
     raw[date_col] = pd.to_datetime(raw[date_col], errors="coerce")
@@ -116,11 +128,16 @@ def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
             continue
         cu = str(c).upper().replace(" ", "")
         if "SPX" in cu and "SPX" not in rename_map.values():
-            rename_map[c] = "SPX"; used.add(c)
-        elif ("USGG10" in cu or "UST10" in cu or "US10" in cu) and "USGG10YR" not in rename_map.values():
-            rename_map[c] = "USGG10YR"; used.add(c)
+            rename_map[c] = "SPX"
+            used.add(c)
+        elif (
+            "USGG10" in cu or "UST10" in cu or "US10" in cu
+        ) and "USGG10YR" not in rename_map.values():
+            rename_map[c] = "USGG10YR"
+            used.add(c)
         elif "DXY" in cu and "DXY" not in rename_map.values():
-            rename_map[c] = "DXY"; used.add(c)
+            rename_map[c] = "DXY"
+            used.add(c)
     raw = raw.rename(columns=rename_map)
 
     needed = ["SPX", "USGG10YR", "DXY"]
@@ -220,8 +237,12 @@ def render_cross_asset():
     # ----- Quick presets — sync both panels to the same methodology
     pc1, pc2, pc3, pc_spacer = st.columns([1, 1, 1, 4])
     with pc1:
-        if st.button("⚡ Standard", use_container_width=True, key="ca_preset_std",
-                     help="Both panels: window=20, no smoothing, per-day SPX-positive anchor."):
+        if st.button(
+            "⚡ Standard",
+            use_container_width=True,
+            key="ca_preset_std",
+            help="Both panels: window=20, no smoothing, per-day SPX-positive anchor.",
+        ):
             for ns in ("corr", "pca"):
                 st.session_state[f"{ns}_window"] = 20
                 st.session_state[f"{ns}_weighting"] = "equal"
@@ -230,8 +251,12 @@ def render_cross_asset():
             st.session_state["pca_presmooth"] = 0
             st.rerun()
     with pc2:
-        if st.button("〜 Smooth", use_container_width=True, key="ca_preset_smooth",
-                     help="Both panels: window=90, halflife=15 pre-smoothing, Procrustes."):
+        if st.button(
+            "〜 Smooth",
+            use_container_width=True,
+            key="ca_preset_smooth",
+            help="Both panels: window=90, halflife=15 pre-smoothing, Procrustes.",
+        ):
             for ns in ("corr", "pca"):
                 st.session_state[f"{ns}_window"] = 90
                 st.session_state[f"{ns}_weighting"] = "equal"
@@ -240,8 +265,12 @@ def render_cross_asset():
             st.session_state["pca_presmooth"] = 15
             st.rerun()
     with pc3:
-        if st.button("≈ Very Smooth", use_container_width=True, key="ca_preset_vsmooth",
-                     help="Both panels: window=120, halflife=20, EWM weighting, Procrustes."):
+        if st.button(
+            "≈ Very Smooth",
+            use_container_width=True,
+            key="ca_preset_vsmooth",
+            help="Both panels: window=120, halflife=20, EWM weighting, Procrustes.",
+        ):
             for ns in ("corr", "pca"):
                 st.session_state[f"{ns}_window"] = 120
                 st.session_state[f"{ns}_weighting"] = "ewm"
@@ -256,9 +285,11 @@ def render_cross_asset():
         scaling = st.radio(
             "Return scaling (shared by both panels)",
             options=["zscore", "volscale"],
-            index=["zscore", "volscale"].index(st.session_state.get("ca_scaling", "zscore")),
+            index=["zscore", "volscale"].index(
+                st.session_state.get("ca_scaling", "zscore")
+            ),
             format_func=lambda x: {
-                "zscore":   "Z-score (within window)",
+                "zscore": "Z-score (within window)",
                 "volscale": "Vol-scale (trailing-vol divisor)",
             }[x],
             key="ca_scaling",
@@ -271,8 +302,10 @@ def render_cross_asset():
             ),
         )
     with tbc2:
-        st.markdown("<div style='font-size:10px;color:transparent;'>spacer</div>",
-                    unsafe_allow_html=True)
+        st.markdown(
+            "<div style='font-size:10px;color:transparent;'>spacer</div>",
+            unsafe_allow_html=True,
+        )
         if st.button("↻ Refresh data", use_container_width=True, key="ca_refresh"):
             st.cache_data.clear()
             st.rerun()
@@ -319,7 +352,9 @@ def render_cross_asset():
     # zeros into the rolling correlation, biasing values toward zero.
     # Removing them brings the math in line with Bloomberg's CORREL function.
     n_before = len(returns)
-    returns = returns[(returns["SPX"] != 0) & (returns["USGG10YR"] != 0) & (returns["DXY"] != 0)]
+    returns = returns[
+        (returns["SPX"] != 0) & (returns["USGG10YR"] != 0) & (returns["DXY"] != 0)
+    ]
     n_dropped = n_before - len(returns)
 
     if n_dropped > 0:
@@ -335,10 +370,12 @@ def render_cross_asset():
     # -------------------------------------------------------------------
     # Sub-tabs inside the Cross-Asset section
     # -------------------------------------------------------------------
-    tab_pairwise, tab_regime = st.tabs([
-        "📊 Correlations & Theme",
-        "🔬 Regime",
-    ])
+    tab_pairwise, tab_regime = st.tabs(
+        [
+            "📊 Correlations & Theme",
+            "🔬 Regime",
+        ]
+    )
 
     with tab_pairwise:
         col_left, col_right = st.columns(2)
@@ -382,7 +419,9 @@ def _render_correlations_panel(returns: pd.DataFrame):
     with cc1:
         window = st.slider(
             "Window (trading days)",
-            min_value=5, max_value=252, step=1,
+            min_value=5,
+            max_value=252,
+            step=1,
             value=st.session_state.get("corr_window", 20),
             key="corr_window",
             help="Rolling window for pairwise correlation. Bloomberg's default is 20.",
@@ -391,7 +430,9 @@ def _render_correlations_panel(returns: pd.DataFrame):
         weighting = st.radio(
             "Weighting",
             options=["equal", "ewm"],
-            index=["equal", "ewm"].index(st.session_state.get("corr_weighting", "equal")),
+            index=["equal", "ewm"].index(
+                st.session_state.get("corr_weighting", "equal")
+            ),
             format_func=lambda x: {"equal": "Equal", "ewm": "Exp (W/3)"}[x],
             key="corr_weighting",
             horizontal=True,
@@ -429,13 +470,17 @@ def _render_correlations_panel(returns: pd.DataFrame):
 
     fig = go.Figure()
     for pair_key in PAIR_LABELS:
-        fig.add_trace(go.Scatter(
-            x=rolled.index, y=rolled[pair_key],
-            mode="lines", name=PAIR_LABELS[pair_key],
-            line=dict(color=PAIR_COLORS[pair_key], width=1.4),
-            hovertemplate=f"<b>{PAIR_LABELS[pair_key]}</b><br>"
-                          + "%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=rolled.index,
+                y=rolled[pair_key],
+                mode="lines",
+                name=PAIR_LABELS[pair_key],
+                line=dict(color=PAIR_COLORS[pair_key], width=1.4),
+                hovertemplate=f"<b>{PAIR_LABELS[pair_key]}</b><br>"
+                + "%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
+            )
+        )
     fig.add_hline(y=0, line=dict(color="rgba(255,255,255,0.2)", width=1))
 
     fig.update_layout(
@@ -443,20 +488,33 @@ def _render_correlations_panel(returns: pd.DataFrame):
         height=360,
         showlegend=True,
         legend=dict(
-            orientation="h", yanchor="top", y=-0.15,
-            xanchor="left", x=0,
-            bgcolor="rgba(0,0,0,0)", font=dict(size=10, color="#ccc"),
+            orientation="h",
+            yanchor="top",
+            y=-0.15,
+            xanchor="left",
+            x=0,
+            bgcolor="rgba(0,0,0,0)",
+            font=dict(size=10, color="#ccc"),
         ),
         xaxis=dict(
-            showgrid=True, gridcolor=GRID, zeroline=False,
+            showgrid=True,
+            gridcolor=GRID,
+            zeroline=False,
             tickfont=dict(size=9, color=TEXT_DIM),
-            rangeslider=dict(visible=True, bgcolor="#1a1a1a",
-                             bordercolor="#fbbf24", borderwidth=1, thickness=0.04),
+            rangeslider=dict(
+                visible=True,
+                bgcolor="#1a1a1a",
+                bordercolor="#fbbf24",
+                borderwidth=1,
+                thickness=0.04,
+            ),
             type="date",
         ),
         yaxis=dict(
             range=[-1, 1],
-            showgrid=True, gridcolor=GRID, zeroline=False,
+            showgrid=True,
+            gridcolor=GRID,
+            zeroline=False,
             tickfont=dict(size=9, color=TEXT_DIM),
             tickvals=[-1, -0.5, 0, 0.5, 1],
         ),
@@ -499,7 +557,9 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
     with pc1:
         window = st.slider(
             "Window (trading days)",
-            min_value=5, max_value=252, step=1,
+            min_value=5,
+            max_value=252,
+            step=1,
             value=st.session_state.get("pca_window", 20),
             key="pca_window",
             help=(
@@ -524,7 +584,9 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
         weighting = st.radio(
             "Weighting",
             options=["equal", "ewm"],
-            index=["equal", "ewm"].index(st.session_state.get("pca_weighting", "equal")),
+            index=["equal", "ewm"].index(
+                st.session_state.get("pca_weighting", "equal")
+            ),
             format_func=lambda x: {"equal": "Equal", "ewm": "Exp (W/3)"}[x],
             key="pca_weighting",
             horizontal=True,
@@ -533,8 +595,13 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
         pca_method = st.radio(
             "Sign convention",
             options=["standard", "procrustes"],
-            index=["standard", "procrustes"].index(st.session_state.get("pca_method", "standard")),
-            format_func=lambda x: {"standard": "Per-day SPX+", "procrustes": "Procrustes"}[x],
+            index=["standard", "procrustes"].index(
+                st.session_state.get("pca_method", "standard")
+            ),
+            format_func=lambda x: {
+                "standard": "Per-day SPX+",
+                "procrustes": "Procrustes",
+            }[x],
             key="pca_method",
             horizontal=True,
             help=(
@@ -565,12 +632,12 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
     if dominance_gap >= DOMINANCE_THRESHOLD:
         weight_note = (
             f'<b style="color:#fff;">{label_map[largest_asset]}</b> has the largest '
-            f'weight in this theme.'
+            f"weight in this theme."
         )
     else:
         weight_note = (
-            'All three assets are participating with similar weight — no single '
-            'asset dominates the theme.'
+            "All three assets are participating with similar weight — no single "
+            "asset dominates the theme."
         )
 
     if same_sign:
@@ -602,7 +669,9 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
         load = loadings.get(asset, np.nan)
         weight_label = loading_label(load)
         col_color = {
-            "SPX": COLOR_SPX, "USGG10YR": COLOR_UST10Y, "DXY": COLOR_DXY,
+            "SPX": COLOR_SPX,
+            "USGG10YR": COLOR_UST10Y,
+            "DXY": COLOR_DXY,
         }[asset]
         with col_widget:
             sign = "+" if load >= 0 else ""
@@ -626,9 +695,13 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
             )
 
     # ---- Rolling loadings chart ----
-    roll = rolling_pca_loadings(returns, window=window, weighting=weighting,
-                                pca_method=pca_method,
-                                presmooth_halflife=presmooth_halflife)
+    roll = rolling_pca_loadings(
+        returns,
+        window=window,
+        weighting=weighting,
+        pca_method=pca_method,
+        presmooth_halflife=presmooth_halflife,
+    )
 
     # Low-confidence mask: when PC1 is not really dominant
     # (eigenvalue gap is small OR explained variance is low)
@@ -647,7 +720,8 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
                 in_band = True
             elif not is_low and in_band:
                 fig.add_vrect(
-                    x0=band_start, x1=date,
+                    x0=band_start,
+                    x1=date,
                     fillcolor="rgba(120,120,120,0.12)",
                     line=dict(width=0),
                     layer="below",
@@ -655,30 +729,43 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
                 in_band = False
         if in_band:
             fig.add_vrect(
-                x0=band_start, x1=roll.index[-1],
+                x0=band_start,
+                x1=roll.index[-1],
                 fillcolor="rgba(120,120,120,0.12)",
                 line=dict(width=0),
                 layer="below",
             )
 
-    fig.add_trace(go.Scatter(
-        x=roll.index, y=roll["SPX_load"], mode="lines",
-        name="SPX weight",
-        line=dict(color=COLOR_SPX, width=1.4),
-        hovertemplate="<b>SPX</b><br>%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x=roll.index, y=roll["USGG10YR_load"], mode="lines",
-        name="UST 10Y weight",
-        line=dict(color=COLOR_UST10Y, width=1.4),
-        hovertemplate="<b>UST 10Y</b><br>%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x=roll.index, y=roll["DXY_load"], mode="lines",
-        name="DXY weight",
-        line=dict(color=COLOR_DXY, width=1.4),
-        hovertemplate="<b>DXY</b><br>%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=roll.index,
+            y=roll["SPX_load"],
+            mode="lines",
+            name="SPX weight",
+            line=dict(color=COLOR_SPX, width=1.4),
+            hovertemplate="<b>SPX</b><br>%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=roll.index,
+            y=roll["USGG10YR_load"],
+            mode="lines",
+            name="UST 10Y weight",
+            line=dict(color=COLOR_UST10Y, width=1.4),
+            hovertemplate="<b>UST 10Y</b><br>%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=roll.index,
+            y=roll["DXY_load"],
+            mode="lines",
+            name="DXY weight",
+            line=dict(color=COLOR_DXY, width=1.4),
+            hovertemplate="<b>DXY</b><br>%{x|%Y-%m-%d}: %{y:.3f}<extra></extra>",
+        )
+    )
     fig.add_hline(y=0, line=dict(color="rgba(255,255,255,0.2)", width=1))
 
     fig.update_layout(
@@ -686,20 +773,33 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
         height=360,
         showlegend=True,
         legend=dict(
-            orientation="h", yanchor="top", y=-0.15,
-            xanchor="left", x=0,
-            bgcolor="rgba(0,0,0,0)", font=dict(size=10, color="#ccc"),
+            orientation="h",
+            yanchor="top",
+            y=-0.15,
+            xanchor="left",
+            x=0,
+            bgcolor="rgba(0,0,0,0)",
+            font=dict(size=10, color="#ccc"),
         ),
         xaxis=dict(
-            showgrid=True, gridcolor=GRID, zeroline=False,
+            showgrid=True,
+            gridcolor=GRID,
+            zeroline=False,
             tickfont=dict(size=9, color=TEXT_DIM),
-            rangeslider=dict(visible=True, bgcolor="#1a1a1a",
-                             bordercolor="#fbbf24", borderwidth=1, thickness=0.04),
+            rangeslider=dict(
+                visible=True,
+                bgcolor="#1a1a1a",
+                bordercolor="#fbbf24",
+                borderwidth=1,
+                thickness=0.04,
+            ),
             type="date",
         ),
         yaxis=dict(
             range=[-1, 1],
-            showgrid=True, gridcolor=GRID, zeroline=False,
+            showgrid=True,
+            gridcolor=GRID,
+            zeroline=False,
             tickfont=dict(size=9, color=TEXT_DIM),
             tickvals=[-1, -0.5, 0, 0.5, 1],
         ),
@@ -712,7 +812,6 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
         f"PC1 explains {explained*100:.0f}% of variance currently · "
         f"Gray bands = periods where the dominant theme is weak (loadings unreliable)."
     )
-
 
 
 # ---------------------------------------------------------------------------
@@ -747,8 +846,11 @@ def _render_regime_panel(returns: pd.DataFrame):
           (high rotation), regardless of sign pattern.
           Soft scores show how close the loadings are to each archetype regime.
         </div>
-        """.format(var=EXP_VAR_THRESHOLD, mag=LOADING_MAGNITUDE_THRESHOLD,
-                   pers=PERSISTENCE_THRESHOLD),
+        """.format(
+            var=EXP_VAR_THRESHOLD,
+            mag=LOADING_MAGNITUDE_THRESHOLD,
+            pers=PERSISTENCE_THRESHOLD,
+        ),
         unsafe_allow_html=True,
     )
 
@@ -794,9 +896,21 @@ def _render_regime_panel(returns: pd.DataFrame):
         spx_color = "#84cc16" if info["spx_load"] > 0 else "#f87171"
         ust_color = "#84cc16" if info["ust_load"] > 0 else "#f87171"
         dxy_color = "#84cc16" if info["dxy_load"] > 0 else "#f87171"
-        spx_str = f"+{info['spx_load']:.2f}" if info["spx_load"] >= 0 else f"{info['spx_load']:.2f}"
-        ust_str = f"+{info['ust_load']:.2f}" if info["ust_load"] >= 0 else f"{info['ust_load']:.2f}"
-        dxy_str = f"+{info['dxy_load']:.2f}" if info["dxy_load"] >= 0 else f"{info['dxy_load']:.2f}"
+        spx_str = (
+            f"+{info['spx_load']:.2f}"
+            if info["spx_load"] >= 0
+            else f"{info['spx_load']:.2f}"
+        )
+        ust_str = (
+            f"+{info['ust_load']:.2f}"
+            if info["ust_load"] >= 0
+            else f"{info['ust_load']:.2f}"
+        )
+        dxy_str = (
+            f"+{info['dxy_load']:.2f}"
+            if info["dxy_load"] >= 0
+            else f"{info['dxy_load']:.2f}"
+        )
 
         # Persistence interpretation
         if info["persistence"] is None:
@@ -805,12 +919,18 @@ def _render_regime_panel(returns: pd.DataFrame):
         else:
             pers_str = f"{info['persistence']:+.3f}"
             p = info["persistence"]
-            if p > 0.99:    pers_label = "very stable"
-            elif p > 0.95:  pers_label = "stable"
-            elif p > 0.85:  pers_label = "drifting"
-            elif p > 0.70:  pers_label = "rotating"
-            elif p > 0.0:   pers_label = "rotating fast"
-            else:           pers_label = "flipped"
+            if p > 0.99:
+                pers_label = "very stable"
+            elif p > 0.95:
+                pers_label = "stable"
+            elif p > 0.85:
+                pers_label = "drifting"
+            elif p > 0.70:
+                pers_label = "rotating"
+            elif p > 0.0:
+                pers_label = "rotating fast"
+            else:
+                pers_label = "flipped"
 
         st.markdown(
             f"""
@@ -918,40 +1038,18 @@ def _render_regime_panel(returns: pd.DataFrame):
     # ("P32DT0H0M0S") that the renderer can't position, leaving the chart blank.
     # We also use barmode="overlay" (not "stack") so each bar is positioned
     # independently by its own `base` rather than stacking on the previous bar.
-    fig_stripe = go.Figure()
-    for _, run in runs.iterrows():
-        width_ms = (run["End"] - run["Start"] + pd.Timedelta(days=1)).total_seconds() * 1000.0
-        fig_stripe.add_trace(go.Bar(
-            x=[width_ms],
-            y=["Regime"],
-            base=run["Start"].isoformat(),
-            orientation='h',
-            marker=dict(color=BUCKET_COLOR[run["Regime"]],
-                        line=dict(color=BG, width=0.5)),
-            hovertemplate=(
-                f"<b>{run['Regime']}</b><br>"
-                f"{run['Start'].strftime('%Y-%m-%d')} → "
-                f"{run['End'].strftime('%Y-%m-%d')}<br>"
-                f"{run['Duration']} day(s)<extra></extra>"
-            ),
-            showlegend=False,
-        ))
-    fig_stripe.update_layout(
-        **{**DARK_LAYOUT,
-           "height": 90,
-           "barmode": "overlay",
-           "showlegend": False,
-           "margin": dict(l=10, r=10, t=10, b=30),
-           "yaxis": dict(visible=False, fixedrange=True),
-           "xaxis": dict(
-               type="date",
-               showgrid=False,
-               tickfont=dict(size=10, color=TEXT_DIM),
-           ),
-        }
+    fig_stripe = plot_regime_timeline(
+        runs=runs,
+        color_func=lambda r: BUCKET_COLOR.get(r, "#525252"),
+        x_min=regimes.index.min(),
+        x_max=regimes.index.max(),
+        height=120,
+        dark_layout=DARK_LAYOUT,
+        text_dim=TEXT_DIM,
     )
-    st.plotly_chart(fig_stripe, use_container_width=True,
-                    config={"displayModeBar": False})
+    st.plotly_chart(
+        fig_stripe, use_container_width=True, config={"displayModeBar": False}
+    )
 
     # Color legend strip
     legend_html = "<div style='display:flex;flex-wrap:wrap;gap:1rem;font-size:11px;color:#bbb;margin-bottom:1rem;'>"
@@ -986,36 +1084,51 @@ def _render_regime_panel(returns: pd.DataFrame):
     )
 
     fig_pers = go.Figure()
-    fig_pers.add_trace(go.Scatter(
-        x=persistence.index, y=persistence.values,
-        mode="lines",
-        line=dict(color="#06b6d4", width=1.2),
-        name="Persistence",
-        hovertemplate="%{x|%Y-%m-%d}<br>cos = %{y:.4f}<extra></extra>",
-    ))
+    fig_pers.add_trace(
+        go.Scatter(
+            x=persistence.index,
+            y=persistence.values,
+            mode="lines",
+            line=dict(color="#06b6d4", width=1.2),
+            name="Persistence",
+            hovertemplate="%{x|%Y-%m-%d}<br>cos = %{y:.4f}<extra></extra>",
+        )
+    )
     # Reference bands
     for y, label, color in [
-        (0.99,  "very stable (≥0.99)", "rgba(132,204,22,0.25)"),
-        (0.95,  "stable (≥0.95)",      "rgba(252,211,77,0.20)"),
-        (0.85,  "drifting (≥0.85)",    "rgba(251,146,60,0.18)"),
+        (0.99, "very stable (≥0.99)", "rgba(132,204,22,0.25)"),
+        (0.95, "stable (≥0.95)", "rgba(252,211,77,0.20)"),
+        (0.85, "drifting (≥0.85)", "rgba(251,146,60,0.18)"),
     ]:
-        fig_pers.add_hline(y=y, line=dict(color=color, dash="dot", width=1),
-                           annotation_text=label, annotation_position="left",
-                           annotation_font=dict(color=TEXT_DIM, size=9))
-    fig_pers.add_hline(y=0, line=dict(color="rgba(248,113,113,0.3)", width=1, dash="dash"))
+        fig_pers.add_hline(
+            y=y,
+            line=dict(color=color, dash="dot", width=1),
+            annotation_text=label,
+            annotation_position="left",
+            annotation_font=dict(color=TEXT_DIM, size=9),
+        )
+    fig_pers.add_hline(
+        y=0, line=dict(color="rgba(248,113,113,0.3)", width=1, dash="dash")
+    )
 
     fig_pers.update_layout(
-        **{**DARK_LAYOUT, "height": 220, "showlegend": False,
-           "margin": dict(l=10, r=10, t=10, b=30),
-           "yaxis": dict(range=[-1.05, 1.05], gridcolor=GRID,
-                         tickfont=dict(size=10, color=TEXT_DIM),
-                         tickvals=[-1, -0.5, 0, 0.5, 1]),
-           "xaxis": dict(gridcolor=GRID,
-                         tickfont=dict(size=10, color=TEXT_DIM)),
+        **{
+            **DARK_LAYOUT,
+            "height": 220,
+            "showlegend": False,
+            "margin": dict(l=10, r=10, t=10, b=30),
+            "yaxis": dict(
+                range=[-1.05, 1.05],
+                gridcolor=GRID,
+                tickfont=dict(size=10, color=TEXT_DIM),
+                tickvals=[-1, -0.5, 0, 0.5, 1],
+            ),
+            "xaxis": dict(gridcolor=GRID, tickfont=dict(size=10, color=TEXT_DIM)),
         }
     )
-    st.plotly_chart(fig_pers, use_container_width=True,
-                    config={"displayModeBar": False})
+    st.plotly_chart(
+        fig_pers, use_container_width=True, config={"displayModeBar": False}
+    )
 
     # ---- Section 4: Recent transitions log -----------------------------
     st.markdown(
@@ -1038,17 +1151,24 @@ def _render_regime_panel(returns: pd.DataFrame):
     if trans.empty:
         st.caption("No transitions in this period.")
     else:
+
         def _fmt_trans_row(row):
             from_color = BUCKET_COLOR.get(row["From"], "#525252")
             to_color = BUCKET_COLOR.get(row["To"], "#525252")
-            pers_str = f"{row['Persistence']:+.3f}" if row["Persistence"] is not None else "—"
+            pers_str = (
+                f"{row['Persistence']:+.3f}" if row["Persistence"] is not None else "—"
+            )
             # Color the persistence: red if a real rotation happened
             if row["Persistence"] is not None:
                 p = row["Persistence"]
-                if p < 0.0:    pers_color = "#dc2626"  # full flip
-                elif p < 0.5:  pers_color = "#ef4444"  # major rotation
-                elif p < 0.85: pers_color = "#f97316"  # transition zone
-                else:          pers_color = "#84cc16"  # mild
+                if p < 0.0:
+                    pers_color = "#dc2626"  # full flip
+                elif p < 0.5:
+                    pers_color = "#ef4444"  # major rotation
+                elif p < 0.85:
+                    pers_color = "#f97316"  # transition zone
+                else:
+                    pers_color = "#84cc16"  # mild
             else:
                 pers_color = "#888"
             return (
@@ -1191,52 +1311,85 @@ def _render_price_levels(prices: pd.DataFrame):
     )
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=prices.index, y=prices["SPX"], mode="lines",
-        name="SPX (level)", line=dict(color=COLOR_SPX, width=1.2),
-        yaxis="y", hovertemplate="<b>SPX</b><br>%{x|%Y-%m-%d}: %{y:.2f}<extra></extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x=prices.index, y=prices["USGG10YR"], mode="lines",
-        name="UST 10Y (yield %)", line=dict(color=COLOR_UST10Y, width=1.2),
-        yaxis="y2", hovertemplate="<b>UST 10Y</b><br>%{x|%Y-%m-%d}: %{y:.2f}%<extra></extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x=prices.index, y=prices["DXY"], mode="lines",
-        name="DXY (level)", line=dict(color=COLOR_DXY, width=1.2),
-        yaxis="y3", hovertemplate="<b>DXY</b><br>%{x|%Y-%m-%d}: %{y:.2f}<extra></extra>",
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=prices.index,
+            y=prices["SPX"],
+            mode="lines",
+            name="SPX (level)",
+            line=dict(color=COLOR_SPX, width=1.2),
+            yaxis="y",
+            hovertemplate="<b>SPX</b><br>%{x|%Y-%m-%d}: %{y:.2f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=prices.index,
+            y=prices["USGG10YR"],
+            mode="lines",
+            name="UST 10Y (yield %)",
+            line=dict(color=COLOR_UST10Y, width=1.2),
+            yaxis="y2",
+            hovertemplate="<b>UST 10Y</b><br>%{x|%Y-%m-%d}: %{y:.2f}%<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=prices.index,
+            y=prices["DXY"],
+            mode="lines",
+            name="DXY (level)",
+            line=dict(color=COLOR_DXY, width=1.2),
+            yaxis="y3",
+            hovertemplate="<b>DXY</b><br>%{x|%Y-%m-%d}: %{y:.2f}<extra></extra>",
+        )
+    )
 
     fig.update_layout(
         **DARK_LAYOUT,
         height=320,
         showlegend=True,
         legend=dict(
-            orientation="h", yanchor="top", y=1.12,
-            xanchor="right", x=1,
-            bgcolor="rgba(0,0,0,0)", font=dict(size=10, color="#ccc"),
+            orientation="h",
+            yanchor="top",
+            y=1.12,
+            xanchor="right",
+            x=1,
+            bgcolor="rgba(0,0,0,0)",
+            font=dict(size=10, color="#ccc"),
         ),
         xaxis=dict(
             domain=[0.05, 0.92],
-            showgrid=True, gridcolor=GRID, zeroline=False,
-            tickfont=dict(size=9, color=TEXT_DIM), type="date",
+            showgrid=True,
+            gridcolor=GRID,
+            zeroline=False,
+            tickfont=dict(size=9, color=TEXT_DIM),
+            type="date",
         ),
         yaxis=dict(
             title=dict(text="SPX", font=dict(color=COLOR_SPX, size=10)),
             tickfont=dict(color=COLOR_SPX, size=9),
-            showgrid=True, gridcolor=GRID, zeroline=False,
+            showgrid=True,
+            gridcolor=GRID,
+            zeroline=False,
         ),
         yaxis2=dict(
             title=dict(text="UST 10Y %", font=dict(color=COLOR_UST10Y, size=10)),
             tickfont=dict(color=COLOR_UST10Y, size=9),
-            overlaying="y", side="right",
-            showgrid=False, zeroline=False,
+            overlaying="y",
+            side="right",
+            showgrid=False,
+            zeroline=False,
         ),
         yaxis3=dict(
             title=dict(text="DXY", font=dict(color=COLOR_DXY, size=10)),
             tickfont=dict(color=COLOR_DXY, size=9),
-            overlaying="y", side="right", position=1.0, anchor="free",
-            showgrid=False, zeroline=False,
+            overlaying="y",
+            side="right",
+            position=1.0,
+            anchor="free",
+            showgrid=False,
+            zeroline=False,
         ),
         margin=dict(l=60, r=80, t=40, b=30),
     )

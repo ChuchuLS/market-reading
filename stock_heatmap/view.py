@@ -21,7 +21,6 @@ import streamlit as st
 
 from stock_heatmap.data_yf import get_heatmap_data
 
-
 # Theming constants — matched to the rest of the app
 BG = "#0a0a0a"
 TEXT_DIM = "#888"
@@ -73,8 +72,8 @@ def render_stock_heatmap():
             ["S&P 500", "Nasdaq 100", "Dow Jones 30", "Russell 2000 (Top 50 proxy)"],
             index=1,
             help="Universe of stocks to display. S&P 500 is fetched live from Wikipedia; "
-                 "others use a snapshot list. Russell 2000 uses a 50-name proxy "
-                 "(full 2000 would overwhelm yfinance).",
+            "others use a snapshot list. Russell 2000 uses a 50-name proxy "
+            "(full 2000 would overwhelm yfinance).",
         )
 
     with c2:
@@ -118,7 +117,9 @@ def render_stock_heatmap():
     last_load_key = f"heatmap_last_load_{index_name}"
     cooldown_seconds = 60
 
-    needs_load = cache_key not in st.session_state or st.session_state[cache_key] is None
+    needs_load = (
+        cache_key not in st.session_state or st.session_state[cache_key] is None
+    )
     last_load = st.session_state.get(last_load_key, 0)
     seconds_since_last = time.time() - last_load
     in_cooldown = (not needs_load) and seconds_since_last < cooldown_seconds
@@ -129,7 +130,8 @@ def render_stock_heatmap():
             wait = int(cooldown_seconds - seconds_since_last)
             st.button(
                 f"⟳ Refresh available in {wait}s",
-                use_container_width=True, disabled=True,
+                use_container_width=True,
+                disabled=True,
             )
             clicked = False
         else:
@@ -183,7 +185,10 @@ def render_stock_heatmap():
     with fc2:
         min_cap_b = st.number_input(
             "Min market cap ($B)",
-            min_value=0.0, max_value=5000.0, value=0.0, step=1.0,
+            min_value=0.0,
+            max_value=5000.0,
+            value=0.0,
+            step=1.0,
             help="Hide stocks with market cap below this threshold.",
         )
 
@@ -228,7 +233,9 @@ def render_stock_heatmap():
     # Hierarchy: optional grouping → ticker
     if group_by == "Sector":
         labels = ["All"] + view["Sector"].unique().tolist() + view["Ticker"].tolist()
-        parents = [""] + ["All"] * len(view["Sector"].unique()) + view["Sector"].tolist()
+        parents = (
+            [""] + ["All"] * len(view["Sector"].unique()) + view["Sector"].tolist()
+        )
         # Sector aggregate sizes (sum of children)
         sector_sizes = view.groupby("Sector")["_size"].sum().to_dict()
         sector_sizes_list = [sector_sizes[s] for s in view["Sector"].unique()]
@@ -246,8 +253,7 @@ def render_stock_heatmap():
 
         # Hover and label text per node
         ticker_text = [
-            f"<b>{r['Ticker']}</b><br>{r[color_by]:+.2f}%"
-            for _, r in view.iterrows()
+            f"<b>{r['Ticker']}</b><br>{r[color_by]:+.2f}%" for _, r in view.iterrows()
         ]
         text = ["All"] + list(view["Sector"].unique()) + ticker_text
 
@@ -270,7 +276,9 @@ def render_stock_heatmap():
 
     elif group_by == "Industry":
         labels = ["All"] + view["Industry"].unique().tolist() + view["Ticker"].tolist()
-        parents = [""] + ["All"] * len(view["Industry"].unique()) + view["Industry"].tolist()
+        parents = (
+            [""] + ["All"] * len(view["Industry"].unique()) + view["Industry"].tolist()
+        )
         ind_sizes = view.groupby("Industry")["_size"].sum().to_dict()
         ind_sizes_list = [ind_sizes[s] for s in view["Industry"].unique()]
         values = [sum(ind_sizes_list)] + ind_sizes_list + view["_size"].tolist()
@@ -308,8 +316,7 @@ def render_stock_heatmap():
         overall_color = (view[color_by] * view["_size"]).sum() / view["_size"].sum()
         colors = [overall_color] + view[color_by].tolist()
         text = ["All"] + [
-            f"<b>{r['Ticker']}</b><br>{r[color_by]:+.2f}%"
-            for _, r in view.iterrows()
+            f"<b>{r['Ticker']}</b><br>{r[color_by]:+.2f}%" for _, r in view.iterrows()
         ]
         ticker_hover = [
             f"<b>{r['Ticker']}</b> — {r['Name']}<br>"
@@ -321,44 +328,50 @@ def render_stock_heatmap():
 
     # Diverging green/red colorscale
     colorscale = [
-        [0.0,  "#7f1d1d"],   # deep red
+        [0.0, "#7f1d1d"],  # deep red
         [0.25, "#dc2626"],
         [0.45, "#fca5a5"],
-        [0.5,  "#262626"],   # neutral / zero
+        [0.5, "#262626"],  # neutral / zero
         [0.55, "#86efac"],
         [0.75, "#16a34a"],
-        [1.0,  "#14532d"],   # deep green
+        [1.0, "#14532d"],  # deep green
     ]
 
-    fig = go.Figure(go.Treemap(
-        labels=labels,
-        parents=parents,
-        values=values,
-        text=text,
-        textinfo="text",
-        textfont=dict(family="Inter, sans-serif", size=11, color="#ffffff"),
-        marker=dict(
-            colors=colors,
-            colorscale=colorscale,
-            cmid=0,
-            cmin=-cap,
-            cmax=cap,
-            line=dict(color="#0a0a0a", width=1),
-            colorbar=dict(
-                title=dict(text=f"<i>{color_by} %</i>",
-                           font=dict(size=10, color="#aaa")),
-                tickfont=dict(size=9, color=TEXT_DIM),
-                outlinewidth=0,
-                thickness=10,
-                len=0.5,
-                ticksuffix="%",
+    fig = go.Figure(
+        go.Treemap(
+            labels=labels,
+            parents=parents,
+            values=values,
+            text=text,
+            textinfo="text",
+            textfont=dict(family="Inter, sans-serif", size=11, color="#ffffff"),
+            marker=dict(
+                colors=colors,
+                colorscale=colorscale,
+                cmid=0,
+                cmin=-cap,
+                cmax=cap,
+                line=dict(color="#0a0a0a", width=1),
+                colorbar=dict(
+                    title=dict(
+                        text=f"<i>{color_by} %</i>", font=dict(size=10, color="#aaa")
+                    ),
+                    tickfont=dict(size=9, color=TEXT_DIM),
+                    outlinewidth=0,
+                    thickness=10,
+                    len=0.5,
+                    ticksuffix="%",
+                ),
             ),
-        ),
-        hovertemplate=hovers,
-        branchvalues="total",
-        pathbar=dict(visible=True, thickness=18,
-                     textfont=dict(family="Inter", size=10, color="#aaa")),
-    ))
+            hovertemplate=hovers,
+            branchvalues="total",
+            pathbar=dict(
+                visible=True,
+                thickness=18,
+                textfont=dict(family="Inter", size=10, color="#aaa"),
+            ),
+        )
+    )
 
     fig.update_layout(
         paper_bgcolor=BG,
@@ -384,8 +397,12 @@ def render_stock_heatmap():
     with fc1:
         st.metric("Stocks shown", f"{n_shown} / {n_total}")
     with fc2:
-        st.metric(f"{color_by} Breadth", f"{pos} / {neg}", f"{breadth:.0f}% positive",
-                  delta_color="off")
+        st.metric(
+            f"{color_by} Breadth",
+            f"{pos} / {neg}",
+            f"{breadth:.0f}% positive",
+            delta_color="off",
+        )
     with fc3:
         leader_idx = view[color_by].idxmax()
         leader = view.loc[leader_idx]
@@ -393,8 +410,12 @@ def render_stock_heatmap():
     with fc4:
         laggard_idx = view[color_by].idxmin()
         laggard = view.loc[laggard_idx]
-        st.metric(f"{color_by} Laggard", laggard["Ticker"], f"{laggard[color_by]:.2f}%",
-                  delta_color="inverse")
+        st.metric(
+            f"{color_by} Laggard",
+            laggard["Ticker"],
+            f"{laggard[color_by]:.2f}%",
+            delta_color="inverse",
+        )
 
     st.caption(
         f"Color scale capped at ±{cap:.0f}% for visual contrast. "

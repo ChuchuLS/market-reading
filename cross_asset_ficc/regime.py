@@ -24,32 +24,34 @@ import numpy as np
 import pandas as pd
 
 from cross_asset_ficc.analytics import (
-    ASSETS, ASSET_LABELS, LOAD_COLS, leadership_stats,
+    ASSETS,
+    ASSET_LABELS,
+    LOAD_COLS,
+    leadership_stats,
 )
 
-
 # ---- Classification thresholds (parallel to cross_asset/regime.py) ----------
-LOADING_MAGNITUDE_THRESHOLD = 0.30   # leader's |loading|
-EXP_VAR_THRESHOLD = 0.45             # 5 assets: lower than 3-asset 0.60 is fine
-PERSISTENCE_THRESHOLD = 0.85         # day-over-day cosine for "Transitioning"
+LOADING_MAGNITUDE_THRESHOLD = 0.30  # leader's |loading|
+EXP_VAR_THRESHOLD = 0.45  # 5 assets: lower than 3-asset 0.60 is fine
+PERSISTENCE_THRESHOLD = 0.85  # day-over-day cosine for "Transitioning"
 
 # Leader color palette — colorblind-safe (no red/green pairings).
 # Distinguishable under deuteranopia, protanopia, and tritanopia by varying
 # both hue and lightness.
 LEADER_COLOR = {
-    "SPX":      "#3b82f6",   # blue
-    "USGG10YR": "#06b6d4",   # cyan (distinguishable from blue by saturation)
-    "DXY":      "#f97316",   # orange
-    "BCOM":     "#a855f7",   # purple
-    "LF98OAS":  "#facc15",   # yellow (distinct from orange by lightness)
+    "SPX": "#3b82f6",  # blue
+    "USGG10YR": "#06b6d4",  # cyan (distinguishable from blue by saturation)
+    "DXY": "#f97316",  # orange
+    "BCOM": "#a855f7",  # purple
+    "LF98OAS": "#facc15",  # yellow (distinct from orange by lightness)
 }
 
 # Special-state colors — also colorblind-safe.
 # Mixed is gray (achromatic), Transitioning is white (high-contrast against
 # the dark theme; distinct from all leader hues).
 SPECIAL_COLOR = {
-    "Mixed":         "#525252",   # gray (achromatic — universally readable)
-    "Transitioning": "#e5e7eb",   # near-white (distinct from all leader colors)
+    "Mixed": "#525252",  # gray (achromatic — universally readable)
+    "Transitioning": "#e5e7eb",  # near-white (distinct from all leader colors)
 }
 
 
@@ -89,10 +91,12 @@ def classify_loadings_series(
         if pd.isna(leader_load) or abs(leader_load) < mag_threshold:
             labels.append("Mixed")
             continue
-        labels.append(_format_label(
-            lead.loc[date, "Leader"],
-            lead.loc[date, "SignPattern"],
-        ))
+        labels.append(
+            _format_label(
+                lead.loc[date, "Leader"],
+                lead.loc[date, "SignPattern"],
+            )
+        )
     return pd.Series(labels, index=loadings_df.index, name="Regime")
 
 
@@ -111,8 +115,9 @@ def cosine_persistence(loadings_df: pd.DataFrame) -> pd.Series:
 
     V = loadings_df[LOAD_COLS].values
     if V.shape[0] < 2:
-        return pd.Series([np.nan] * V.shape[0],
-                         index=loadings_df.index, name="Persistence")
+        return pd.Series(
+            [np.nan] * V.shape[0], index=loadings_df.index, name="Persistence"
+        )
 
     dots = np.einsum("ij,ij->i", V[1:], V[:-1])
     norms = np.linalg.norm(V[1:], axis=1) * np.linalg.norm(V[:-1], axis=1)
@@ -155,11 +160,13 @@ def regime_runs(regime_series: pd.Series) -> pd.DataFrame:
     s["RunId"] = (s["Regime"] != s["Regime"].shift()).cumsum()
     runs = (
         s.groupby("RunId")
-         .agg(Regime=("Regime", "first"),
-              Start=("Date", "first"),
-              End=("Date", "last"),
-              Duration=("Date", "count"))
-         .reset_index(drop=True)
+        .agg(
+            Regime=("Regime", "first"),
+            Start=("Date", "first"),
+            End=("Date", "last"),
+            Duration=("Date", "count"),
+        )
+        .reset_index(drop=True)
     )
     return runs
 
@@ -172,10 +179,19 @@ def regime_stats(regime_series: pd.Series) -> pd.DataFrame:
     Sorted by Days descending.
     """
     if regime_series.empty:
-        return pd.DataFrame(columns=[
-            "Regime", "Days", "Pct", "Runs",
-            "AvgRun", "MedRun", "MaxRun", "LastEntry", "Active",
-        ])
+        return pd.DataFrame(
+            columns=[
+                "Regime",
+                "Days",
+                "Pct",
+                "Runs",
+                "AvgRun",
+                "MedRun",
+                "MaxRun",
+                "LastEntry",
+                "Active",
+            ]
+        )
 
     runs = regime_runs(regime_series)
     total = len(regime_series)
@@ -184,20 +200,22 @@ def regime_stats(regime_series: pd.Series) -> pd.DataFrame:
     rows = []
     for bucket, group in runs.groupby("Regime"):
         days = group["Duration"].sum()
-        rows.append({
-            "Regime":    bucket,
-            "Days":      int(days),
-            "Pct":       float(days / total * 100),
-            "Runs":      int(len(group)),
-            "AvgRun":    float(group["Duration"].mean()),
-            "MedRun":    float(group["Duration"].median()),
-            "MaxRun":    int(group["Duration"].max()),
-            "LastEntry": group["Start"].max(),
-            "Active":    bucket == current,
-        })
-    return (pd.DataFrame(rows)
-              .sort_values("Days", ascending=False)
-              .reset_index(drop=True))
+        rows.append(
+            {
+                "Regime": bucket,
+                "Days": int(days),
+                "Pct": float(days / total * 100),
+                "Runs": int(len(group)),
+                "AvgRun": float(group["Duration"].mean()),
+                "MedRun": float(group["Duration"].median()),
+                "MaxRun": int(group["Duration"].max()),
+                "LastEntry": group["Start"].max(),
+                "Active": bucket == current,
+            }
+        )
+    return (
+        pd.DataFrame(rows).sort_values("Days", ascending=False).reset_index(drop=True)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -228,16 +246,17 @@ def current_regime_info(
         else:
             break
 
-    days_in = int((regime_series.index <= last_date).sum() -
-                  (regime_series.index < start_date).sum())
+    days_in = int(
+        (regime_series.index <= last_date).sum()
+        - (regime_series.index < start_date).sum()
+    )
 
     last_loadings = loadings_df.iloc[-1]
     lead_today = leadership_stats(loadings_df.iloc[[-1]]).iloc[0]
 
     last_persistence = (
         persistence_series.iloc[-1]
-        if not persistence_series.empty
-        and not pd.isna(persistence_series.iloc[-1])
+        if not persistence_series.empty and not pd.isna(persistence_series.iloc[-1])
         else None
     )
 
@@ -248,18 +267,18 @@ def current_regime_info(
         color = LEADER_COLOR.get(lead_today["Leader"], "#fbbf24")
 
     return {
-        "regime":        current,
-        "color":         color,
-        "since":         start_date,
-        "days_in":       days_in,
-        "leader":        lead_today["Leader"],
-        "leader_label":  lead_today["LeaderLabel"],
-        "leader_load":   float(lead_today["LeaderLoad"]),
+        "regime": current,
+        "color": color,
+        "since": start_date,
+        "days_in": days_in,
+        "leader": lead_today["Leader"],
+        "leader_label": lead_today["LeaderLabel"],
+        "leader_load": float(lead_today["LeaderLoad"]),
         "concentration": float(lead_today["Concentration"]),
-        "sign_pattern":  lead_today["SignPattern"],
-        "loadings":      {a: float(last_loadings[f"{a}_load"]) for a in ASSETS},
-        "expvar":        float(last_loadings["ExplainedVar"]),
-        "persistence":   last_persistence,
+        "sign_pattern": lead_today["SignPattern"],
+        "loadings": {a: float(last_loadings[f"{a}_load"]) for a in ASSETS},
+        "expvar": float(last_loadings["ExplainedVar"]),
+        "persistence": last_persistence,
     }
 
 
@@ -277,15 +296,27 @@ def transitions_log(
     Columns: Date, From, To, Persistence (min over 5d), DurationFrom.
     """
     if regime_series.empty or len(regime_series) < 2:
-        return pd.DataFrame(columns=[
-            "Date", "From", "To", "Persistence", "DurationFrom",
-        ])
+        return pd.DataFrame(
+            columns=[
+                "Date",
+                "From",
+                "To",
+                "Persistence",
+                "DurationFrom",
+            ]
+        )
 
     runs = regime_runs(regime_series)
     if len(runs) < 2:
-        return pd.DataFrame(columns=[
-            "Date", "From", "To", "Persistence", "DurationFrom",
-        ])
+        return pd.DataFrame(
+            columns=[
+                "Date",
+                "From",
+                "To",
+                "Persistence",
+                "DurationFrom",
+            ]
+        )
 
     aligned_pers = persistence_series.reindex(regime_series.index)
 
@@ -297,16 +328,18 @@ def transitions_log(
 
         end_idx = aligned_pers.index.get_loc(transition_date)
         start_idx = max(0, end_idx - 4)
-        window_pers = aligned_pers.iloc[start_idx:end_idx + 1].dropna()
+        window_pers = aligned_pers.iloc[start_idx : end_idx + 1].dropna()
         pers = float(window_pers.min()) if len(window_pers) > 0 else None
 
-        transitions.append({
-            "Date":         transition_date,
-            "From":         prev_run["Regime"],
-            "To":           curr_run["Regime"],
-            "Persistence":  pers,
-            "DurationFrom": int(prev_run["Duration"]),
-        })
+        transitions.append(
+            {
+                "Date": transition_date,
+                "From": prev_run["Regime"],
+                "To": curr_run["Regime"],
+                "Persistence": pers,
+                "DurationFrom": int(prev_run["Duration"]),
+            }
+        )
 
     df = pd.DataFrame(transitions)
     df = df.sort_values("Date", ascending=False).reset_index(drop=True)

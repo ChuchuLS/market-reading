@@ -1,5 +1,9 @@
 """
 Market Reading — unified dashboard.
+
+Sidebar navigation: only the selected page is rendered, so Streamlit no
+longer computes every dashboard page on each run (the old nested-st.tabs
+structure evaluated all tab bodies eagerly).
 """
 
 from __future__ import annotations
@@ -43,50 +47,38 @@ Unified Cross-Asset Dashboard
         unsafe_allow_html=True,
     )
 
-top_tab_macro, top_tab_stocks, top_tab_xasset = st.tabs([
-    "📊 Macro Tracker",
-    "🌐 Stock Heatmap",
-    "🔗 Cross-Asset",
-])
+PAGES = [
+    "Macro Tracker",
+    "Stock Heatmap",
+    "3-Asset Classic",
+    "FICC",
+    "Rates",
+    "Credit",
+    "FX",
+    "Equity",
+    "Commodities",
+    "Sectors",
+]
 
-with top_tab_macro:
+page = st.sidebar.radio("Page", PAGES, label_visibility="collapsed")
+
+if page == "Macro Tracker":
     render_macro_tracker()
-
-with top_tab_stocks:
+elif page == "Stock Heatmap":
     render_stock_heatmap()
-
-with top_tab_xasset:
-    sub_classic, sub_ficc, sub_rates, sub_credit, sub_fx, sub_equity, sub_comdty, sub_sector = st.tabs([
-        "3-Asset Classic",
-        "FICC (5-asset)",
-        "Rates",
-        "Credit",
-        "FX",
-        "Equity",
-        "Commodities",
-        "Sectors",
-    ])
-
-    with sub_classic:
-        render_cross_asset()
-
-    with sub_ficc:
-        render_cross_asset_ficc()
-
-    with sub_rates:
-        render_rates_complex()
-
-    with sub_credit:
-        render_credit_complex()
-
-    with sub_fx:
-        render_fx_complex()
-
-    with sub_equity:
-        render_equity_complex()
-
-    with sub_comdty:
-        render_commodities_complex()
-
-    with sub_sector:
-        render_sector_complex()
+elif page == "3-Asset Classic":
+    render_cross_asset()
+elif page == "FICC":
+    render_cross_asset_ficc()
+elif page == "Rates":
+    render_rates_complex()
+elif page == "Credit":
+    render_credit_complex()
+elif page == "FX":
+    render_fx_complex()
+elif page == "Equity":
+    render_equity_complex()
+elif page == "Commodities":
+    render_commodities_complex()
+elif page == "Sectors":
+    render_sector_complex()
