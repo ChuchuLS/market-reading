@@ -261,17 +261,21 @@ def transitions_log(
 
 
 def regime_color(regime_label: str) -> str:
+    """
+    Resolve a regime label ('Mixed', 'Transitioning', or 'Leader SignPattern')
+    to a display color, keyed by the leader asset. Matches the FULL asset
+    label (longest first) so multi-word labels like "UST 10Y" or "HY OAS"
+    resolve correctly instead of collapsing to their first token.
+    """
     if regime_label in SPECIAL_COLOR:
         return SPECIAL_COLOR[regime_label]
-    leader_label = regime_label.split(" ", 1)[0]
-    for asset_key, lbl in ASSET_LABELS.items():
-        if lbl == leader_label:
+
+    for asset_key, label in sorted(
+        ASSET_LABELS.items(), key=lambda kv: len(kv[1]), reverse=True
+    ):
+        if regime_label.startswith(label + " "):
             return LEADER_COLOR.get(asset_key, "#fbbf24")
-    # Multi-word labels like "US HY OAS" — take first 2 tokens
-    leader_label2 = " ".join(regime_label.split(" ")[:3])
-    for asset_key, lbl in ASSET_LABELS.items():
-        if lbl == leader_label2 or regime_label.startswith(lbl):
-            return LEADER_COLOR.get(asset_key, "#fbbf24")
+
     return "#fbbf24"
 
 

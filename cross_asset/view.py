@@ -17,6 +17,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from shared.plots import plot_regime_timeline
+from shared.data_utils import drop_all_zero_return_rows
 from theming import BG, GRID, TEXT, TEXT_DIM, DARK_LAYOUT
 from cross_asset.analytics import (
     compute_returns,
@@ -344,24 +345,14 @@ def render_cross_asset():
     # Compute returns according to chosen method
     returns = compute_returns(prices, vol_scale=(scaling == "volscale"))
 
-    # Strict filter: drop days where any of the three returns is exactly 0.
-    # A zero log-return / zero yield-diff means today's price equals yesterday's,
-    # which on a US trading day usually means the BQL pull captured stale data
-    # for that asset (US holidays where one market closed, or intraday-pulled
-    # data that hadn't updated yet). Including these rows mixes stale-data
-    # zeros into the rolling correlation, biasing values toward zero.
-    # Removing them brings the math in line with Bloomberg's CORREL function.
-    n_before = len(returns)
-    returns = returns[
-        (returns["SPX"] != 0) & (returns["USGG10YR"] != 0) & (returns["DXY"] != 0)
-    ]
-    n_dropped = n_before - len(returns)
-
+    # Drop only fully-stale days (all three assets unchanged), e.g. a holiday
+    # the data source forward-filled across SPX/UST10Y/DXY at once. A single
+    # asset showing a zero change is legitimate (a flat yield day, etc.) and
+    # no longer discards the whole row.
+    returns, n_dropped = drop_all_zero_return_rows(returns)
     if n_dropped > 0:
         st.caption(
-            f"⚠ Strict filter dropped {n_dropped} stale-data rows "
-            f"(days where at least one of SPX/UST10Y/DXY had zero return — "
-            f"typically US holidays or intraday-pulled data). "
+            f"Dropped {n_dropped} rows where all assets were unchanged. "
             f"{len(returns)} valid trading days used for correlation/PCA."
         )
 
@@ -611,9 +602,19 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
             ),
         )
 
-    pca = pca_dominant_theme(returns, window=window, weighting=weighting)
-    explained = pca["explained_variance"]
-    loadings = pca["loadings"]
+    # Single source of truth: the rolling PCA used by the chart and regime
+    # below. Headline values come from its latest row so the card and chart
+    # always reflect the same window/weighting/method/presmooth settings.
+    roll = rolling_pca_loadings(
+        returns,
+        window=window,
+        weighting=weighting,
+        pca_method=pca_method,
+        presmooth_halflife=presmooth_halflife,
+    )
+    latest = roll.iloc[-1]
+    explained = float(latest["ExplainedVar"])
+    loadings = {a: float(latest[f"{a}_load"]) for a in ["SPX", "USGG10YR", "DXY"]}
 
     # Mixed vs aligned interpretation
     signs = {a: ("pos" if v > 0 else "neg") for a, v in loadings.items()}
@@ -695,14 +696,6 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
             )
 
     # ---- Rolling loadings chart ----
-    roll = rolling_pca_loadings(
-        returns,
-        window=window,
-        weighting=weighting,
-        pca_method=pca_method,
-        presmooth_halflife=presmooth_halflife,
-    )
-
     # Low-confidence mask: when PC1 is not really dominant
     # (eigenvalue gap is small OR explained variance is low)
     low_conf_mask = (roll["EigGap"] < 0.15) | (roll["ExplainedVar"] < 0.45)

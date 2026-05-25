@@ -353,18 +353,20 @@ def transitions_log(
 # ---------------------------------------------------------------------------
 def regime_color(regime_label: str) -> str:
     """
-    Resolve a regime label (either 'Mixed', 'Transitioning', or
-    'Leader SignPattern') to a display color. Color is determined by
-    the leader, so all regimes led by the same asset share a color hue.
+    Resolve a regime label ('Mixed', 'Transitioning', or 'Leader SignPattern')
+    to a display color, keyed by the leader asset. Matches the FULL asset
+    label (longest first) so multi-word labels like "UST 10Y" or "HY OAS"
+    resolve correctly instead of collapsing to their first token.
     """
     if regime_label in SPECIAL_COLOR:
         return SPECIAL_COLOR[regime_label]
-    # First token before space is the display label of the leader
-    leader_label = regime_label.split(" ", 1)[0]
-    # Reverse lookup
-    for asset_key, lbl in ASSET_LABELS.items():
-        if lbl == leader_label:
+
+    for asset_key, label in sorted(
+        ASSET_LABELS.items(), key=lambda kv: len(kv[1]), reverse=True
+    ):
+        if regime_label.startswith(label + " "):
             return LEADER_COLOR.get(asset_key, "#fbbf24")
+
     return "#fbbf24"
 
 

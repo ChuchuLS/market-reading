@@ -22,7 +22,6 @@ def plot_regime_timeline(
     height=120,
     dark_layout=None,
     text_dim="#9ca3af",
-    bg=None,
 ):
     """
     Plot regime runs as continuous horizontal colored time bands.
@@ -41,8 +40,6 @@ def plot_regime_timeline(
         Base layout dict (e.g. theming.DARK_LAYOUT) merged into the figure.
     text_dim : str
         Tick label color.
-    bg : str | None
-        If given, a thin line of this color separates adjacent bands.
 
     Returns
     -------
@@ -73,7 +70,6 @@ def plot_regime_timeline(
         )
         return fig
 
-    line_kwargs = {}
     for _, run in runs.iterrows():
         start = pd.to_datetime(run["Start"])
         end = pd.to_datetime(run["End"])

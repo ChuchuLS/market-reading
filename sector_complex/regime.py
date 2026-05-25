@@ -274,7 +274,9 @@ def transitions_log(
 def regime_color(regime_label: str) -> str:
     if regime_label in SPECIAL_COLOR:
         return SPECIAL_COLOR[regime_label]
-    for asset_key, lbl in ASSET_LABELS.items():
+    for asset_key, lbl in sorted(
+        ASSET_LABELS.items(), key=lambda kv: len(kv[1]), reverse=True
+    ):
         if regime_label.startswith(lbl + " "):
             return LEADER_COLOR.get(asset_key, "#fbbf24")
     return "#fbbf24"

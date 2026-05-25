@@ -2,7 +2,7 @@
 Credit complex view — within-complex PCA on 3 credit sub-components.
 
 Sub-components: LF98OAS (US HY), LUACOAS (US IG), ITRXEBE (EU iTraxx).
-Reads the same FICCREADING.xlsx as cross_asset_ficc/.
+Reads the same MARKET_DATA.xlsx (sheet: ficc) as cross_asset_ficc/.
 
 Sub-tabs:
   1. Heatmap — grayscale + sign symbol overlay (3 rows)
@@ -26,6 +26,7 @@ from plotly.subplots import make_subplots
 import streamlit as st
 
 from shared.plots import plot_regime_timeline
+from shared.data_utils import drop_all_zero_return_rows
 from theming import BG, GRID, TEXT, TEXT_DIM, DARK_LAYOUT
 from credit_complex.analytics import (
     ASSETS,
@@ -102,7 +103,7 @@ SUBSTRING_MAP = [
 
 @st.cache_data(show_spinner=False)
 def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
-    """Read FICCREADING.xlsx and extract credit sub-components."""
+    """Read MARKET_DATA.xlsx (sheet: ficc) and extract credit sub-components."""
     raw = pd.read_excel(path, sheet_name=SHEET_NAME)
 
     cols = list(raw.columns)
@@ -124,7 +125,7 @@ def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
                 break
     if date_col is None:
         raise ValueError(
-            f"Couldn't find a Date column in FICCREADING.xlsx. Columns: {cols}"
+            f"Couldn't find a Date column in MARKET_DATA.xlsx (sheet: ficc). Columns: {cols}"
         )
     raw[date_col] = pd.to_datetime(raw[date_col], errors="coerce")
     raw = raw.rename(columns={date_col: "Date"})
@@ -155,7 +156,7 @@ def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
     missing = [c for c in needed if c not in raw.columns]
     if missing:
         raise ValueError(
-            f"FICCREADING.xlsx is missing credit sub-components: {missing}. "
+            f"MARKET_DATA.xlsx (sheet: ficc) is missing credit sub-components: {missing}. "
             f"Required: LF98OAS, LUACOAS, ITRXEBE. "
             f"Found: {list(raw.columns)}"
         )
@@ -180,7 +181,7 @@ def load_prices(path: Path, _mtime: float) -> pd.DataFrame:
 def render_credit_complex():
     if not DATA_PATH.exists():
         st.error(
-            f"FICCREADING.xlsx not found at {DATA_PATH}.\n\n"
+            f"MARKET_DATA.xlsx (sheet: ficc) not found at {DATA_PATH}.\n\n"
             "Required columns: **LF98OAS, LUACOAS, ITRXEBE**."
         )
         return
@@ -189,7 +190,7 @@ def render_credit_complex():
     try:
         prices = load_prices(DATA_PATH, mtime)
     except Exception as e:
-        st.error(f"Failed to read FICCREADING.xlsx for credit: {e}")
+        st.error(f"Failed to read MARKET_DATA.xlsx (sheet: ficc) for credit: {e}")
         return
 
     last_updated = datetime.fromtimestamp(mtime).strftime("%b %d, %Y · %H:%M")
@@ -314,13 +315,10 @@ def render_credit_complex():
 
     returns = compute_returns(prices, vol_scale=(scaling == "volscale"))
 
-    n_before = len(returns)
-    nonzero_mask = (returns != 0).all(axis=1)
-    returns = returns[nonzero_mask]
-    n_dropped = n_before - len(returns)
+    returns, n_dropped = drop_all_zero_return_rows(returns)
     if n_dropped > 0:
         st.caption(
-            f"⚠ Strict filter dropped {n_dropped} stale-data rows. "
+            f"Dropped {n_dropped} rows where all assets were unchanged. "
             f"{len(returns)} valid trading days used."
         )
 
@@ -1166,9 +1164,19 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
             horizontal=True,
         )
 
-    pca = pca_dominant_theme(returns, window=window, weighting=weighting)
-    explained = pca["explained_variance"]
-    loadings_today = pca["loadings"]
+    # Single source of truth: the rolling PCA used by the chart and regime
+    # below. The headline is derived from its latest row so the card, chart,
+    # and regime all reflect the SAME window/weighting/method/presmooth.
+    roll = rolling_pca_loadings(
+        returns,
+        window=window,
+        weighting=weighting,
+        pca_method=pca_method,
+        presmooth_halflife=presmooth_halflife,
+    )
+    latest = roll.iloc[-1]
+    explained = float(latest["ExplainedVar"])
+    loadings_today = {a: float(latest[f"{a}_load"]) for a in ASSETS}
 
     abs_loads = {a: abs(loadings_today.get(a, 0.0)) for a in ASSETS}
     leader = max(abs_loads, key=abs_loads.get)
@@ -1216,14 +1224,6 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
                 """,
                 unsafe_allow_html=True,
             )
-
-    roll = rolling_pca_loadings(
-        returns,
-        window=window,
-        weighting=weighting,
-        pca_method=pca_method,
-        presmooth_halflife=presmooth_halflife,
-    )
 
     low_conf_mask = (roll["EigGap"] < 0.10) | (roll["ExplainedVar"] < 0.50)
 

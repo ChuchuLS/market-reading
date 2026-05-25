@@ -10,5 +10,5 @@ signal. Its sign relative to DXY tells you what KIND of dollar regime is active:
   opposite to DXY   → USD strength is growth/rate-divergence driven
   basis dominates with DXY weak → funding event without directional move
 
-Reads the same FICCREADING.xlsx as cross_asset_ficc/.
+Reads the same MARKET_DATA.xlsx (sheet: ficc) as cross_asset_ficc/.
 """
