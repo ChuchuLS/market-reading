@@ -31,6 +31,24 @@ Each complex page shows a Dominant Theme panel (rolling PC1 loadings), a
 Regime Timeline (continuous colored bands via the shared Scatter helper), a
 persistence tracker, and a recent-transitions table.
 
+### 3-Asset Classic regime (4 relative regimes)
+
+The 3-Asset Classic regime uses the first PCA loading vector across SPX,
+UST 10Y, and DXY. Because the PCA sign is anchored so SPX is positive, the
+regime is defined by whether 10Y and DXY are *aligned with* or *opposite to*
+SPX — four relative regimes rather than eight absolute sign buckets (the four
+SPX-negative buckets never occur under the anchor, so they were meaningless):
+
+| 10Y vs SPX | DXY vs SPX | Regime |
+|------------|------------|--------|
+| with SPX (10Y +) | opposite (DXY −) | Risk-on / Growth reflation |
+| opposite (10Y −) | opposite (DXY −) | Goldilocks / Duration-led risk-on |
+| with SPX (10Y +) | with SPX (DXY +) | Inflation / Rates pressure |
+| opposite (10Y −) | with SPX (DXY +) | Defensive / Dollar squeeze |
+
+Days where PC1 is too weak to read (low explained variance or small loadings)
+are "Mixed"; days with very low day-over-day persistence are "Transitioning".
+
 ## Repo layout
 
 ```

@@ -1,19 +1,33 @@
 """
-8-bucket regime classification for SPX/UST10Y/DXY loading triples.
+4-regime relative classification for SPX/UST10Y/DXY PCA loadings.
 
-Pure mechanical sign-cube labeling. No economic interpretation imposed.
-The classification simply asks: "what's the sign pattern of today's PC1?"
+The dominant theme (PC1) is sign-anchored so SPX is the positive reference.
+An absolute 8-bucket sign cube is therefore misleading: the four SPX-negative
+buckets essentially never occur under that anchor. Instead we classify by
+whether UST 10Y and DXY are ALIGNED WITH or OPPOSITE TO SPX, which yields four
+meaningful regimes (and works regardless of SPX's absolute sign, since it's a
+relative comparison):
 
-Buckets:
-    +--, -++, --+, ++-, +++, +-+, -+-, ---  (the 8 sign triples)
-    Mixed  (catch-all when classification is unreliable)
+    UST 10Y vs SPX | DXY vs SPX | Regime
+    ---------------|------------|----------------------------------
+    opposite       | opposite   | Risk-on / Growth reflation
+    same           | opposite   | Goldilocks / Duration-led risk-on
+    opposite       | same       | Inflation / Rates pressure
+    same           | same       | Defensive / Dollar squeeze
 
-A row is classified as "Mixed" when:
-    1. PC1 explained variance is below the EXP_VAR_THRESHOLD, OR
-    2. Any of the three loadings has |value| < LOADING_MAGNITUDE_THRESHOLD
+Mapping rationale (with SPX anchored +):
+  - Risk-on / Growth reflation  (10Y +, DXY −): equities and yields rise
+    together while the dollar falls — growth optimism / reflationary risk.
+  - Goldilocks / Duration-led   (10Y −, DXY −): equities up, yields and dollar
+    down — easing financial conditions, soft-landing risk appetite.
+  - Inflation / Rates pressure  (10Y +, DXY +): yields and dollar both rise
+    against the equity anchor — a rates/inflation-pressure regime.
+  - Defensive / Dollar squeeze  (10Y −, DXY +): dollar bid defensively while
+    yields fall — risk-off / dollar squeeze / growth stress.
 
-Both rules together mean: we only assign a sign-bucket when there's
-genuinely a dominant theme AND each asset is meaningfully participating.
+A row is "Mixed" when PC1 is too weak to read (explained variance below
+EXP_VAR_THRESHOLD, or a loading magnitude below LOADING_MAGNITUDE_THRESHOLD).
+Days with very low day-over-day persistence are relabeled "Transitioning".
 """
 
 from __future__ import annotations
@@ -22,73 +36,43 @@ import numpy as np
 import pandas as pd
 from typing import Optional
 
-# ---- Classification thresholds (Phase 2 v1: strict) -----------------------
+# ---- Classification thresholds --------------------------------------------
 LOADING_MAGNITUDE_THRESHOLD = 0.30
 EXP_VAR_THRESHOLD = 0.60
 
-# ---- Persistence threshold for "Transitioning" relabel (Phase 2 v1.5) -----
-# Days with day-over-day cosine persistence below this threshold are
-# considered "rotating fast" and get relabeled regardless of their
-# instantaneous sign-triple. Catches 1-day blips during regime transitions.
+# ---- Persistence threshold for "Transitioning" relabel --------------------
 PERSISTENCE_THRESHOLD = 0.85
 
-# ---- Bucket definitions ----------------------------------------------------
-# Sign triples, in (SPX, UST10Y, DXY) order. Each maps to a stable label.
-BUCKET_ORDER = [
-    "+--",  # SPX+ 10Y- DXY-
-    "-++",  # SPX- 10Y+ DXY+
-    "--+",  # SPX- 10Y- DXY+
-    "++-",  # SPX+ 10Y+ DXY-
-    "+++",  # all positive
-    "+-+",  # SPX+ 10Y- DXY+
-    "-+-",  # SPX- 10Y+ DXY-
-    "---",  # all negative
-    "Mixed",  # weak / unreliable signal
-    "Transitioning",  # high-rotation day (low persistence)
+# ---- The four relative regimes --------------------------------------------
+RISK_ON_REFLATION = "Risk-on / Growth reflation"
+GOLDILOCKS = "Goldilocks / Duration-led risk-on"
+INFLATION_PRESSURE = "Inflation / Rates pressure"
+DEFENSIVE_SQUEEZE = "Defensive / Dollar squeeze"
+
+REGIME_ORDER = [
+    RISK_ON_REFLATION,
+    GOLDILOCKS,
+    INFLATION_PRESSURE,
+    DEFENSIVE_SQUEEZE,
+    "Mixed",
+    "Transitioning",
 ]
 
-# 8 sign-triples have an archetype unit vector. Used for soft-scoring.
-# The archetype is the unit vector pointing in the right sign direction
-# with equal magnitude on each axis: e.g. +-- → (+1, -1, -1) / sqrt(3).
-SIGN_TRIPLES = ["+--", "-++", "--+", "++-", "+++", "+-+", "-+-", "---"]
+# Display labels (the regime names are already readable, so display == name)
+BUCKET_DISPLAY = {r: r for r in REGIME_ORDER}
 
-
-def _triple_to_unit_vector(triple: str) -> np.ndarray:
-    """Convert a sign triple like '+--' to a unit vector in 3D."""
-    signs = np.array([1.0 if c == "+" else -1.0 for c in triple])
-    return signs / np.linalg.norm(signs)
-
-
-ARCHETYPES = {t: _triple_to_unit_vector(t) for t in SIGN_TRIPLES}
-
-# Display label expanded
-BUCKET_DISPLAY = {
-    "+--": "SPX+  10Y−  DXY−",
-    "-++": "SPX−  10Y+  DXY+",
-    "--+": "SPX−  10Y−  DXY+",
-    "++-": "SPX+  10Y+  DXY−",
-    "+++": "SPX+  10Y+  DXY+",
-    "+-+": "SPX+  10Y−  DXY+",
-    "-+-": "SPX−  10Y+  DXY−",
-    "---": "SPX−  10Y−  DXY−",
-    "Mixed": "Mixed",
-    "Transitioning": "Transitioning",
-}
-
-# Color palette — distinct, dashboard-aesthetic, dark-bg friendly.
-# Most-common patterns get more prominent colors.
+# Color palette — dark-bg friendly, one stable hue per regime.
 BUCKET_COLOR = {
-    "+--": "#22c55e",  # green — risk-on classic
-    "-++": "#ef4444",  # red — inflation/hawkish
-    "--+": "#a855f7",  # purple — flight-to-quality-ish
-    "++-": "#06b6d4",  # cyan — reflation-ish
-    "+++": "#fbbf24",  # amber — broad rally
-    "+-+": "#84cc16",  # lime — unusual
-    "-+-": "#ec4899",  # pink — unusual
-    "---": "#dc2626",  # dark red — broad de-risking
-    "Mixed": "#525252",  # gray — no signal
-    "Transitioning": "#f97316",  # orange — rotating
+    RISK_ON_REFLATION: "#22c55e",  # green  — growth reflation / risk-on
+    GOLDILOCKS: "#06b6d4",  # teal   — soft-landing / duration-led
+    INFLATION_PRESSURE: "#f97316",  # orange — rates/inflation pressure
+    DEFENSIVE_SQUEEZE: "#a855f7",  # purple — defensive / dollar squeeze
+    "Mixed": "#525252",  # gray   — no readable signal
+    "Transitioning": "#e5e7eb",  # light  — fast rotation
 }
+
+# Back-compat alias: some call sites still import BUCKET_ORDER.
+BUCKET_ORDER = REGIME_ORDER
 
 
 def classify_loadings(
@@ -100,8 +84,11 @@ def classify_loadings(
     var_threshold: float = EXP_VAR_THRESHOLD,
 ) -> str:
     """
-    Classify a single (SPX, UST10Y, DXY, explained_var) tuple into one of
-    the 9 buckets (8 sign triples + "Mixed").
+    Classify one (SPX, UST10Y, DXY, explained_var) tuple into one of the four
+    relative regimes, or "Mixed" when the signal is too weak.
+
+    Classification is by the sign of UST 10Y and DXY RELATIVE to SPX, so it is
+    independent of SPX's absolute sign.
     """
     if pd.isna(explained_var) or explained_var < var_threshold:
         return "Mixed"
@@ -112,10 +99,23 @@ def classify_loadings(
     if any(abs(v) < mag_threshold for v in loads):
         return "Mixed"
 
-    spx_sign = "+" if spx_load >= 0 else "-"
-    ust_sign = "+" if ust10y_load >= 0 else "-"
-    dxy_sign = "+" if dxy_load >= 0 else "-"
-    return f"{spx_sign}{ust_sign}{dxy_sign}"
+    spx_sign = spx_load >= 0
+    ust_same = (ust10y_load >= 0) == spx_sign
+    dxy_same = (dxy_load >= 0) == spx_sign
+
+    # Mapping (in absolute signs with SPX anchored +):
+    #   10Y +, DXY −  (10Y same, DXY opp)  -> Risk-on / Growth reflation
+    #   10Y −, DXY −  (10Y opp,  DXY opp)  -> Goldilocks / Duration-led risk-on
+    #   10Y +, DXY +  (10Y same, DXY same) -> Inflation / Rates pressure
+    #   10Y −, DXY +  (10Y opp,  DXY same) -> Defensive / Dollar squeeze
+    if ust_same and not dxy_same:
+        return RISK_ON_REFLATION
+    if not ust_same and not dxy_same:
+        return GOLDILOCKS
+    if ust_same and dxy_same:
+        return INFLATION_PRESSURE
+    # not ust_same and dxy_same
+    return DEFENSIVE_SQUEEZE
 
 
 def classify_loadings_series(
@@ -124,7 +124,7 @@ def classify_loadings_series(
     var_threshold: float = EXP_VAR_THRESHOLD,
 ) -> pd.Series:
     """
-    Apply classify_loadings to each row of a DataFrame from rolling_pca_loadings().
+    Apply classify_loadings to each row of a rolling_pca_loadings() frame.
     Expected columns: SPX_load, USGG10YR_load, DXY_load, ExplainedVar.
     """
     if loadings_df.empty:
@@ -307,38 +307,6 @@ def current_regime_info(
         "expvar": float(last_loadings["ExplainedVar"]),
         "persistence": last_persistence,
     }
-
-
-def soft_scores(loadings_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Cosine similarity of each day's (SPX, UST10Y, DXY) loading vector against
-    all 8 archetype sign-triples.
-
-    Returns a DataFrame indexed by date with one column per archetype
-    (8 columns total). Values range from -1.0 (perfectly opposite) to
-    +1.0 (perfectly aligned). The archetype with the highest similarity
-    on a given day is the "closest" sign-triple — equivalent to the hard
-    classification's argmax (subject to the strict thresholds).
-
-    Cosine vs full unit-vector match: a day with loadings (+0.6, -0.5, -0.6)
-    will score very high against the +-- archetype but moderate-positive
-    against +++ archetype because the SPX axis still aligns.
-    """
-    if loadings_df.empty:
-        return pd.DataFrame(index=loadings_df.index, columns=SIGN_TRIPLES, dtype=float)
-
-    cols = ["SPX_load", "USGG10YR_load", "DXY_load"]
-    V = loadings_df[cols].values
-    norms = np.linalg.norm(V, axis=1)
-
-    # For each archetype, compute V · archetype / |V|.
-    # Archetypes are already unit-length so we don't divide by their norms.
-    out = {}
-    for triple, archetype in ARCHETYPES.items():
-        dots = V @ archetype  # shape (T,)
-        out[triple] = np.where(norms > 0, dots / norms, np.nan)
-
-    return pd.DataFrame(out, index=loadings_df.index)
 
 
 def apply_persistence_filter(

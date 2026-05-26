@@ -37,7 +37,6 @@ from rates_complex.analytics import (
     rolling_pairwise_corrs,
     latest_pairwise_corrs,
     all_pair_keys,
-    pca_dominant_theme,
     rolling_pca_loadings,
     leadership_stats,
     headline_vs_breadth,
@@ -368,7 +367,7 @@ def render_rates_complex():
         with col_left:
             _render_correlations_panel(returns)
         with col_right:
-            _render_dominant_theme_panel(returns)
+            _render_dominant_theme_panel(loadings, returns)
 
     with tab_regime:
         _render_regime_panel(loadings)
@@ -1072,7 +1071,7 @@ def _render_correlations_panel(returns: pd.DataFrame):
 # ---------------------------------------------------------------------------
 # Tab 3b: Dominant theme
 # ---------------------------------------------------------------------------
-def _render_dominant_theme_panel(returns: pd.DataFrame):
+def _render_dominant_theme_panel(loadings: pd.DataFrame, returns: pd.DataFrame):
     st.markdown(
         """
         <div style="font-size:14px;font-weight:700;letter-spacing:0.06em;color:#fbbf24;
@@ -1134,16 +1133,11 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
             horizontal=True,
         )
 
-    # Single source of truth: the rolling PCA used by the chart and regime
-    # below. The headline is derived from its latest row so the card, chart,
-    # and regime all reflect the SAME window/weighting/method/presmooth.
-    roll = rolling_pca_loadings(
-        returns,
-        window=window,
-        weighting=weighting,
-        pca_method=pca_method,
-        presmooth_halflife=presmooth_halflife,
-    )
+    # The sliders above write to session_state. The render function reads those
+    # same keys to compute `loadings`, which is passed in here — so headline,
+    # chart, and regime share ONE PCA computation. (Changing a slider triggers
+    # a rerun; the new settings take effect then.)
+    roll = loadings
     latest = roll.iloc[-1]
     explained = float(latest["ExplainedVar"])
     loadings_today = {a: float(latest[f"{a}_load"]) for a in ASSETS}

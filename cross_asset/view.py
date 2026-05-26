@@ -23,7 +23,6 @@ from cross_asset.analytics import (
     compute_returns,
     rolling_pairwise_corrs,
     latest_pairwise_corrs,
-    pca_dominant_theme,
     rolling_pca_loadings,
     correlation_story,
     loading_label,
@@ -32,7 +31,6 @@ from cross_asset.analytics import (
 from cross_asset.regime import (
     classify_loadings_series,
     cosine_persistence,
-    soft_scores,
     apply_persistence_filter,
     transitions_log,
     regime_runs,
@@ -808,11 +806,11 @@ def _render_dominant_theme_panel(returns: pd.DataFrame):
 
 
 # ---------------------------------------------------------------------------
-# Panel: Regime classification (8-bucket sign cube + persistence)
+# Panel: Regime classification (4 relative regimes + persistence)
 # ---------------------------------------------------------------------------
 def _render_regime_panel(returns: pd.DataFrame):
     """
-    8-bucket regime classification view. Reads the same window/weighting/sign
+    4-regime relative classification view. Reads the same window/weighting/sign
     settings as the Dominant Theme panel (single source of truth), then layers
     a categorical regime label on top of the rolling PCA loadings.
     """
@@ -820,24 +818,34 @@ def _render_regime_panel(returns: pd.DataFrame):
         """
         <div style="font-size:14px;font-weight:700;letter-spacing:0.06em;color:#fbbf24;
                     margin-bottom:0.4rem;">
-          REGIME CLASSIFICATION (8-BUCKET SIGN CUBE)
+          REGIME CLASSIFICATION (4 RELATIVE REGIMES)
         </div>
         <div style="background:rgba(251,191,36,0.04);border:1px solid rgba(251,191,36,0.2);
                     padding:0.75rem 1rem;font-size:11px;color:#ccc;line-height:1.6;
                     margin-bottom:1rem;">
           <span style="color:#fbbf24;font-weight:600;">What this shows:</span>
-          Mechanical labeling of each day's PC1 loadings by sign pattern. No economic
-          interpretation imposed — the bucket name is just the sign triple
-          (e.g. <code>+−−</code> means SPX positive, UST10Y negative, DXY negative).
+          The regime uses the first PCA loading vector across SPX, UST 10Y, and
+          DXY. Because the PCA sign is anchored so SPX is positive, the regime is
+          defined by whether 10Y and DXY are <em>aligned with</em> or
+          <em>opposite to</em> SPX — giving four relative regimes rather than
+          eight absolute sign buckets:
           <br>
-          A day is labeled <span style="color:#aaa;font-weight:600;">Mixed</span> when
+          <span style="color:#22c55e;font-weight:600;">Risk-on / Growth reflation</span>
+          (10Y with SPX, DXY opposite) ·
+          <span style="color:#06b6d4;font-weight:600;">Goldilocks / Duration-led risk-on</span>
+          (10Y opposite, DXY opposite) ·
+          <span style="color:#f97316;font-weight:600;">Inflation / Rates pressure</span>
+          (10Y with SPX, DXY with SPX) ·
+          <span style="color:#a855f7;font-weight:600;">Defensive / Dollar squeeze</span>
+          (10Y opposite, DXY with SPX).
+          <br>
+          A day is <span style="color:#aaa;font-weight:600;">Mixed</span> when
           the dominant theme is unreliable: PC1 explained variance below
           <strong>{var:.0%}</strong>, or any loading magnitude below
           <strong>{mag:.2f}</strong>.
-          A day is labeled <span style="color:#f97316;font-weight:600;">Transitioning</span>
+          A day is <span style="color:#e5e7eb;font-weight:600;">Transitioning</span>
           when day-over-day persistence drops below <strong>{pers:.2f}</strong>
-          (high rotation), regardless of sign pattern.
-          Soft scores show how close the loadings are to each archetype regime.
+          (high rotation).
         </div>
         """.format(
             var=EXP_VAR_THRESHOLD,
@@ -879,7 +887,6 @@ def _render_regime_panel(returns: pd.DataFrame):
     # ---- Hard classification + persistence + soft scoring + filtered regimes ----
     raw_regimes = classify_loadings_series(loadings)
     persistence = cosine_persistence(loadings)
-    scores = soft_scores(loadings)
     # Apply persistence filter: relabel high-rotation days as "Transitioning"
     regimes = apply_persistence_filter(raw_regimes, persistence)
     info = current_regime_info(regimes, loadings, persistence)
@@ -936,7 +943,7 @@ def _render_regime_panel(returns: pd.DataFrame):
                               text-transform:uppercase;">Now in regime</div>
                   <div style="font-family:'JetBrains Mono',monospace;font-size:22px;
                               font-weight:700;color:{info['color']};">{info['regime']}</div>
-                  <div style="font-size:11px;color:#bbb;">{info['label']}</div>
+                  <div style="font-size:11px;color:#bbb;">SPX {spx_str} · 10Y {ust_str} · DXY {dxy_str}</div>
                 </div>
                 <div>
                   <div style="font-size:10px;color:#888;letter-spacing:0.08em;
@@ -968,48 +975,6 @@ def _render_regime_panel(returns: pd.DataFrame):
             """,
             unsafe_allow_html=True,
         )
-
-    # ---- Section 1b: Soft archetype scores (top-3 closest sign-triples) ----
-    if not scores.empty and len(scores) > 0:
-        latest_scores = scores.iloc[-1].sort_values(ascending=False)
-        # Show top 3 archetypes for the latest day
-        top3 = latest_scores.head(3)
-        st.markdown(
-            """
-            <div style="font-size:12px;font-weight:600;letter-spacing:0.06em;color:#fbbf24;
-                        margin:1.2rem 0 0.4rem 0;">
-              ARCHETYPE SIMILARITY (TOP 3)
-            </div>
-            <div style="font-size:11px;color:#888;margin-bottom:0.6rem;">
-              Cosine similarity of today's loading vector against each
-              archetype sign-triple. +1.0 = perfect match, 0 = orthogonal,
-              −1.0 = perfect opposite. The top match is the natural
-              hard-bucket assignment (subject to thresholds).
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        # Build mini bars with colored fill proportional to similarity
-        bar_html = "<div style='display:flex;flex-direction:column;gap:6px;margin-bottom:1rem;'>"
-        for triple, sim in top3.items():
-            color = BUCKET_COLOR.get(triple, "#525252")
-            # Bar width: similarity ranges -1 to +1, but display 0-100% width.
-            # For positive similarity, bar goes right; negative would go left.
-            width_pct = max(0, min(100, sim * 100))
-            sim_str = f"{sim:+.3f}"
-            bar_html += (
-                f"<div style='display:flex;align-items:center;gap:10px;'>"
-                f"<code style='display:inline-block;width:50px;color:{color};font-weight:600;'>{triple}</code>"
-                f"<div style='flex:1;background:#0f0f0f;border:1px solid #1a1a1a;height:18px;"
-                f"position:relative;overflow:hidden;'>"
-                f"<div style='background:{color};width:{width_pct}%;height:100%;opacity:0.8;'></div>"
-                f"</div>"
-                f"<code style='display:inline-block;width:60px;text-align:right;color:#ccc;font-size:11px;'>{sim_str}</code>"
-                f"</div>"
-            )
-        bar_html += "</div>"
-        st.markdown(bar_html, unsafe_allow_html=True)
 
     # ---- Section 2: Regime timeline stripe -----------------------------
     st.markdown(
@@ -1054,7 +1019,7 @@ def _render_regime_panel(returns: pd.DataFrame):
             f"<span style='display:flex;align-items:center;gap:5px;'>"
             f"<span style='width:12px;height:12px;background:{BUCKET_COLOR[b]};"
             f"border-radius:2px;display:inline-block;'></span>"
-            f"<code style='color:#ddd;'>{b}</code>"
+            f"<span style='color:#ddd;'>{b}</span>"
             f"<span style='color:#888;'>({bucket_counts[b]}d)</span>"
             f"</span>"
         )
@@ -1171,12 +1136,12 @@ def _render_regime_panel(returns: pd.DataFrame):
                 f"<td style='padding:5px 10px;'>"
                 f"<span style='display:inline-block;width:8px;height:8px;background:{from_color};"
                 f"border-radius:2px;margin-right:6px;'></span>"
-                f"<code style='color:#ddd;'>{row['From']}</code></td>"
+                f"<span style='color:#ddd;'>{row['From']}</span></td>"
                 f"<td style='padding:5px 10px;color:#666;text-align:center;'>→</td>"
                 f"<td style='padding:5px 10px;'>"
                 f"<span style='display:inline-block;width:8px;height:8px;background:{to_color};"
                 f"border-radius:2px;margin-right:6px;'></span>"
-                f"<code style='color:#fff;font-weight:600;'>{row['To']}</code></td>"
+                f"<span style='color:#fff;font-weight:600;'>{row['To']}</span></td>"
                 f"<td style='padding:5px 10px;font-family:JetBrains Mono;text-align:right;color:{pers_color};'>"
                 f"{pers_str}</td>"
                 f"<td style='padding:5px 10px;font-family:JetBrains Mono;text-align:right;color:#bbb;'>"
@@ -1236,7 +1201,7 @@ def _render_regime_panel(returns: pd.DataFrame):
             f"<td style='padding:6px 10px;'><span style='display:inline-block;width:10px;"
             f"height:10px;background:{BUCKET_COLOR[row['Regime']]};border-radius:2px;"
             f"margin-right:8px;'></span>"
-            f"<code style='color:#fff;font-weight:600;'>{row['Regime']}</code> "
+            f"<span style='color:#fff;font-weight:600;'>{row['Regime']}</span> "
             f"{active_dot}</td>"
             f"<td style='padding:6px 10px;font-family:JetBrains Mono;text-align:right;'>{row['Days']}</td>"
             f"<td style='padding:6px 10px;font-family:JetBrains Mono;text-align:right;'>{row['Pct']:.1f}%</td>"

@@ -1,7 +1,7 @@
 """
 Macro Tracker section — BQL-driven cross-asset performance dashboard.
 
-Reads data/DATA.xlsx in this folder. Renders 4 internal sub-tabs:
+Reads data/MARKET_DATA.xlsx (sheet: macro_tracker). Renders 4 internal sub-tabs:
   - Heatmap (sortable color-coded table)
   - Leaders & Laggards (top/bottom horizontal bars)
   - Category Rotation (grouped bars + category averages)
@@ -144,7 +144,7 @@ CATEGORY_ORDER = CATEGORY_ORDER_ETF + CATEGORY_ORDER_COMDTY
 # ---------------------------------------------------------------------------
 @st.cache_data(show_spinner=False)
 def load_data(path: Path, _mtime: float) -> pd.DataFrame:
-    """Read DATA.xlsx and return tidy DataFrame keyed by ticker.
+    """Read MARKET_DATA.xlsx (sheet: macro_tracker) and return tidy DataFrame keyed by ticker.
 
     Tolerates BQL output that includes an auto-added DATES column between
     the ticker column and the metric columns.
@@ -224,7 +224,7 @@ def render_macro_tracker():
 
     if not DATA_PATH.exists():
         st.error(
-            f"DATA.xlsx not found at {DATA_PATH}. "
+            f"MARKET_DATA.xlsx not found at {DATA_PATH} (sheet: macro_tracker). "
             "Place your BQL output there and click the sidebar Refresh."
         )
         return

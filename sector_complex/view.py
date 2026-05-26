@@ -23,6 +23,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from shared.plots import plot_regime_timeline
+from shared.data_utils import drop_all_zero_return_rows
 from theming import BG, GRID, TEXT, TEXT_DIM, DARK_LAYOUT
 from sector_complex.analytics import (
     ASSETS,
@@ -185,14 +186,20 @@ def render_sector_complex():
         return
 
     st.caption(
-        f"Source: Bloomberg · MARKET_DATA.xlsx · sectors sheet · "
+        f"Source: Bloomberg · MARKET_DATA.xlsx · SPDRIndex sheet · "
         f"{len(prices)} days · "
         f"{prices.index.min().date()} → {prices.index.max().date()} · "
         f"analytics {__ANALYTICS_VERSION__}"
     )
 
     returns = compute_returns(prices)
-    bench = benchmark_returns(prices)
+    returns, n_dropped = drop_all_zero_return_rows(returns)
+    bench = benchmark_returns(prices).reindex(returns.index)
+    if n_dropped > 0:
+        st.caption(
+            f"Dropped {n_dropped} rows where all sectors were unchanged. "
+            f"{len(returns)} valid trading days used."
+        )
 
     # === Section 1: Correlation regime (headline) ===
     _render_correlation_regime(returns)
