@@ -87,16 +87,35 @@ h1, h2, h3, h4, h5, h6 {
 footer {
     visibility: hidden;
 }
-/* Do NOT hide the whole Streamlit header — it contains the sidebar
-   collapse/expand control. Just make it blend into the dark background. */
+/* Do not hide the whole Streamlit header.
+   It contains the sidebar collapse/expand control. */
 header {
-    background: transparent;
+    visibility: visible !important;
+    background: transparent !important;
 }
-/* Hide the toolbar (Deploy/Rerun/etc.) without nuking the header. */
+/* Keep the Streamlit header background clean/dark without removing controls. */
+[data-testid="stHeader"] {
+    visibility: visible !important;
+    background: transparent !important;
+}
+/* Hide toolbar clutter only, but do not hide the sidebar collapse/expand
+   control. */
 [data-testid="stToolbar"] {
     visibility: hidden;
-    height: 0;
+    height: 0%;
     position: fixed;
+}
+/* Explicitly keep the sidebar collapse/expand controls visible.
+   Streamlit renamed the test ID in v1.38: the old name "collapsedControl"
+   stops matching, so we target both the legacy and the new ID. */
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarCollapsedControl"],
+button[kind="header"] {
+    visibility: visible !important;
+    display: block !important;
+    opacity: 1 !important;
+    z-index: 999999 !important;
 }
 
 .block-container {
