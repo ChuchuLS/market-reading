@@ -81,9 +81,23 @@ h1, h2, h3, h4, h5, h6 {
     color: #888 !important;
     letter-spacing: 0.04em;
 }
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-header {visibility: hidden;}
+#MainMenu {
+    visibility: hidden;
+}
+footer {
+    visibility: hidden;
+}
+/* Do NOT hide the whole Streamlit header — it contains the sidebar
+   collapse/expand control. Just make it blend into the dark background. */
+header {
+    background: transparent;
+}
+/* Hide the toolbar (Deploy/Rerun/etc.) without nuking the header. */
+[data-testid="stToolbar"] {
+    visibility: hidden;
+    height: 0;
+    position: fixed;
+}
 
 .block-container {
     padding-top: 1.5rem;
